@@ -39,9 +39,6 @@ await host.page.click("button:has-text(\"Rules\")");
 await host.page.waitForSelector("text=How to play");
 await host.page.screenshot({ path: `${shots}/rules.png` });
 await host.page.keyboard.press("Escape");
-await host.page.click("text=Narrator off");
-await host.page.screenshot({ path: `${shots}/narrator.png` });
-await host.page.click("text=Narrator off");
 await host.page.click("text=Start game");
 
 const snap = {};

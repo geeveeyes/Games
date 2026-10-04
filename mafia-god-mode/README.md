@@ -7,7 +7,7 @@ The app deals secret roles, speaks the night script, collects each private actio
 ## How it works
 
 - **Phones** are each player's private channel: role card, night action, vote.
-- **Narrator** speaks a slower, theatrical script with timed pauses, using the best English voice on the device (natural/neural voices are preferred; there is a voice, speed and pitch control). Generated ambient music shifts with the phase (night drone and distant howls, daylight chimes, a heartbeat during votes) with sound cues for dawn, a death and the win, and it ducks under the voice. Everything is synthesized in the browser, with no audio files. Turn it on from the "Narrator" button on one device (the TV/laptop or the host's phone), since browsers need a tap before they play sound.
+- **Narrator** speaks a slow, theatrical script with timed pauses, in a UK male voice ("Google UK English Male" when the device has it, otherwise the best English voice available) at normal speed and the lowest pitch. Generated ambient music (night drone and distant howls, daylight chimes, a heartbeat during votes, plus sound cues for dawn, a death and the win) plays at 60% and ducks under the voice. Everything is synthesized in the browser, with no audio files. There is one on/off button, and it must be tapped once because browsers block sound until then. Use it on one device (the TV or the host's phone).
 - **Table screen** (optional): open the site on a TV or laptop, enter the room code, and choose **Show on TV**.
 - **Modes** (chosen in the lobby): in person with a TV, in person phones-only, or remote on a video call (no eyes-closed step).
 

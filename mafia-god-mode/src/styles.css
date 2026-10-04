@@ -110,8 +110,6 @@ input[type="text"], input:not([type]), select { font: 1rem var(--body); padding:
 
 .linkbtn { background: none; border: 0; color: var(--lamp); font: inherit; text-decoration: underline; cursor: pointer; padding: 6px 0; align-self: center; }
 .small { font-size: .8rem; }
-.narr { position: static; }
-.panel { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 56px); left: 16px; right: 16px; margin-left: auto; max-width: 360px; max-height: calc(100dvh - 80px); overflow-y: auto; z-index: 20; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
 .defender { font-family: var(--display); text-transform: uppercase; letter-spacing: .06em; font-size: clamp(2.4rem, 12vw, 3.6rem); color: var(--blood); line-height: 1; }
 .modal-back { position: fixed; inset: 0; z-index: 50; background: rgba(5, 6, 10, .72); display: grid; place-items: end center; padding: 0; }
 .modal { width: min(640px, 100%); max-height: 88dvh; overflow-y: auto; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 16px 16px 0 0; padding: 20px 16px max(24px, env(safe-area-inset-bottom)); }

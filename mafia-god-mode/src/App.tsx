@@ -55,7 +55,7 @@ export function App() {
     <Shell code={v.code} onRules={() => setRules(true)} right={<NarratorControl n={narrator} />}>
       {room.error && <p className="error" role="alert">{room.error}</p>}
       {watch ? (
-        <Display v={v} now={room.now} narratorOn={narrator.s.on} enable={narrator.enable} />
+        <Display v={v} now={room.now} narratorOn={narrator.on} enable={narrator.enable} />
       ) : (
         <PlayerScreen v={v} act={room.act} now={room.now} onLeave={leave} />
       )}
@@ -538,37 +538,12 @@ function Display({ v, now, narratorOn, enable }: { v: ClientView; now: () => num
   );
 }
 
-// ---------- Narrator panel ----------
+// ---------- Narrator ----------
 function NarratorControl({ n }: { n: ReturnType<typeof useNarrator> }) {
-  const [open, setOpen] = useState(false);
   if (!n.supported) return null;
-  const { s } = n;
   return (
-    <div className="narr">
-      <button className={`chip ${s.on ? "on" : ""}`} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        {s.on ? "Narrator on" : "Narrator off"}
-      </button>
-      {open && (
-        <div className="panel stack" role="group" aria-label="Narrator settings">
-          <button className="btn" onClick={() => (s.on ? n.disable() : n.enable())}>{s.on ? "Turn narrator off" : "Turn narrator on"}</button>
-          <label className="check"><input type="checkbox" checked={s.voiceOn} onChange={(e) => n.update({ voiceOn: e.target.checked })} /><span>Spoken voice</span></label>
-          <label className="check"><input type="checkbox" checked={s.musicOn} onChange={(e) => n.update({ musicOn: e.target.checked })} /><span>Background music</span></label>
-          <label className="field"><span>Voice</span>
-            <select id="voice" value={s.voiceURI} onChange={(e) => n.update({ voiceURI: e.target.value })}>
-              <option value="">Best available</option>
-              {n.voices.map((v) => <option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>)}
-            </select>
-          </label>
-          <label className="field"><span>Speed {s.rate.toFixed(2)}</span>
-            <input type="range" min="0.6" max="1.1" step="0.02" value={s.rate} onChange={(e) => n.update({ rate: Number(e.target.value) })} /></label>
-          <label className="field"><span>Pitch {s.pitch.toFixed(2)}</span>
-            <input type="range" min="0.5" max="1.3" step="0.02" value={s.pitch} onChange={(e) => n.update({ pitch: Number(e.target.value) })} /></label>
-          <label className="field"><span>Music volume</span>
-            <input type="range" min="0" max="1" step="0.05" value={s.musicVol} onChange={(e) => n.update({ musicVol: Number(e.target.value) })} /></label>
-          <button className="btn ghost" onClick={n.test}>Test the narrator</button>
-          <p className="muted small">Voices come from your device. For the best sound, pick a “Natural” or “Neural” voice if you have one.</p>
-        </div>
-      )}
-    </div>
+    <button className={`chip ${n.on ? "on" : ""}`} aria-pressed={n.on} onClick={() => (n.on ? n.disable() : n.enable())}>
+      {n.on ? "Narrator on" : "Narrator off"}
+    </button>
   );
 }

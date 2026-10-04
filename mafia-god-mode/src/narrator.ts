@@ -5,29 +5,15 @@ import { Ambience, type Mood, type Sting } from "./audio";
 
 export const speechSupported = typeof window !== "undefined" && "speechSynthesis" in window;
 
-export interface NarratorSettings {
-  on: boolean;
-  voiceOn: boolean;
-  musicOn: boolean;
-  musicVol: number;
-  voiceURI: string;
-  rate: number;
-  pitch: number;
-}
-const DEFAULTS: NarratorSettings = { on: false, voiceOn: true, musicOn: true, musicVol: 0.6, voiceURI: "", rate: 0.84, pitch: 0.82 };
-
-const load = (): NarratorSettings => {
-  try {
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem("mgm.narrator") ?? "{}"), on: false };
-  } catch {
-    return DEFAULTS;
-  }
-};
+// Fixed narrator style, chosen by ear: UK male voice, normal speed, lowest pitch, music at 60%.
+const RATE = 1;
+const PITCH = 0.5;
+const MUSIC_VOL = 0.6;
 
 /** Best-sounding English voice available on this device. Natural/neural voices first, then deep male voices. */
-export function bestVoice(voices: SpeechSynthesisVoice[], preferred?: string): SpeechSynthesisVoice | undefined {
-  const chosen = preferred && voices.find((v) => v.voiceURI === preferred);
-  if (chosen) return chosen;
+export function bestVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | undefined {
+  const uk = voices.find((v) => /google uk english male/i.test(v.name));
+  if (uk) return uk;
   const score = (v: SpeechSynthesisVoice) => {
     const n = v.name.toLowerCase();
     let s = 0;
@@ -67,41 +53,22 @@ const STING: Partial<Record<Cue, Sting>> = {
 
 /** Reads narration aloud with timed pauses and plays mood music. One device does this per game. */
 export function useNarrator(view: ClientView | null) {
-  const [s, setS] = useState<NarratorSettings>(load);
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [on, setOn] = useState(false);
   const ambience = useRef<Ambience | null>(null);
   const lastSeq = useRef(0);
   const run = useRef(0);
-  const sRef = useRef(s);
-  sRef.current = s;
 
-  const update = useCallback((patch: Partial<NarratorSettings>) => {
-    setS((cur) => {
-      const next = { ...cur, ...patch };
-      try {
-        const { on: _on, ...keep } = next;
-        localStorage.setItem("mgm.narrator", JSON.stringify(keep));
-      } catch {
-        /* optional */
-      }
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!speechSupported) return;
-    const read = () => setVoices(window.speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith("en")));
-    read();
-    window.speechSynthesis.addEventListener("voiceschanged", read);
-    return () => window.speechSynthesis.removeEventListener("voiceschanged", read);
-  }, []);
-
-  const amb = () => (ambience.current ??= new Ambience());
+  const amb = () => {
+    if (!ambience.current) {
+      ambience.current = new Ambience();
+      ambience.current.setVolume(MUSIC_VOL);
+    }
+    return ambience.current;
+  };
 
   const speak = useCallback((text: string, myRun: number, onDone?: () => void) => {
-    const cfg = sRef.current;
     const segs = parseScript(text);
-    const voice = bestVoice(window.speechSynthesis.getVoices(), cfg.voiceURI);
+    const voice = bestVoice(window.speechSynthesis.getVoices());
     let i = 0;
     const next = () => {
       if (run.current !== myRun) return;
@@ -113,8 +80,8 @@ export function useNarrator(view: ClientView | null) {
       const seg = segs[i++];
       const u = new SpeechSynthesisUtterance(seg.say);
       if (voice) u.voice = voice;
-      u.rate = cfg.rate;
-      u.pitch = cfg.pitch;
+      u.rate = RATE;
+      u.pitch = PITCH;
       u.volume = 1;
       const after = () => setTimeout(next, seg.gap);
       u.onend = after;
@@ -129,7 +96,7 @@ export function useNarrator(view: ClientView | null) {
   useEffect(() => {
     if (!view) return;
     const newest = view.lines.at(-1)?.seq ?? 0;
-    if (!s.on) {
+    if (!on) {
       lastSeq.current = newest;
       return;
     }
@@ -137,7 +104,6 @@ export function useNarrator(view: ClientView | null) {
     if (!fresh.length) return;
     lastSeq.current = newest;
     const a = amb();
-    a.setVolume(s.musicVol);
     const myRun = ++run.current;
     if (speechSupported) window.speechSynthesis.cancel();
     // Play every new line in order, so a slow poll never swallows the middle of a night.
@@ -146,55 +112,36 @@ export function useNarrator(view: ClientView | null) {
       if (run.current !== myRun || idx >= fresh.length) return;
       const line = fresh[idx++];
       const mood = line.cue ? MOOD[line.cue] : undefined;
-      if (mood) a.setMood(s.musicOn ? mood : "off");
+      if (mood) a.setMood(mood);
       const sting = line.cue ? STING[line.cue] : undefined;
       if (sting) a.sting(sting);
-      if (s.voiceOn && speechSupported) speak(line.text, myRun, () => setTimeout(playNext, 400));
+      if (speechSupported) speak(line.text, myRun, () => setTimeout(playNext, 400));
       else setTimeout(playNext, 400);
     };
     playNext();
-  }, [view?.lines, s.on]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [view?.lines, on]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Lobby and game over: no music in the lobby.
+  // No music in the lobby.
   useEffect(() => {
-    if (!s.on) return;
-    const a = amb();
-    a.setVolume(s.musicVol);
-    if (!s.musicOn) a.setMood("off");
-  }, [s.musicOn, s.musicVol, s.on]);
-
-  useEffect(() => {
-    if (view?.phase === "lobby" && s.on) ambience.current?.setMood("off");
-  }, [view?.phase, s.on]);
+    if (view?.phase === "lobby" && on) ambience.current?.setMood("off");
+  }, [view?.phase, on]);
 
   const enable = useCallback(async () => {
     await amb().start();
-    update({ on: true });
+    setOn(true);
     const a = amb();
-    a.setVolume(sRef.current.musicVol);
-    if (view && ["night", "reveal"].includes(view.phase) && sRef.current.musicOn) a.setMood("night");
-    if (view && ["day", "dawn", "result"].includes(view.phase) && sRef.current.musicOn) a.setMood("day");
-  }, [update, view]);
+    if (view && ["night", "reveal"].includes(view.phase)) a.setMood("night");
+    if (view && ["day", "dawn", "result"].includes(view.phase)) a.setMood("day");
+  }, [view]);
 
   const disable = useCallback(() => {
     run.current++;
     if (speechSupported) window.speechSynthesis.cancel();
     ambience.current?.stop();
-    update({ on: false });
-  }, [update]);
+    setOn(false);
+  }, []);
 
-  const test = useCallback(async () => {
-    await amb().start();
-    amb().setVolume(sRef.current.musicVol);
-    amb().sting("gong");
-    const myRun = ++run.current;
-    if (speechSupported) {
-      window.speechSynthesis.cancel();
-      speak("Night falls on the village. || Everyone... close your eyes. | Keep them closed. | No peeking.", myRun);
-    }
-  }, [speak]);
-
-  return { s, update, voices, enable, disable, test, supported: speechSupported };
+  return { on, enable, disable, supported: speechSupported };
 }
 
 export async function keepAwake() {
