@@ -18,6 +18,10 @@ cd mafia-god-mode && npm ci && npm run typecheck && npm test && npm run build
 
 Modes: in-person with TV, in-person phones-only, remote. Roles v1: Mafia, Villager, Doctor, Detective. Ties eliminate nobody. Doctor can self-save and can save the same person on consecutive nights (both host toggles, default on). Dead players do not see roles unless the host enables it. App name: Mafia God Mode.
 
+## Narrator
+
+Script lives in `shared/game.ts` (`narrate(text, cue)`; `|` = short pause, `||` = long pause). `src/narrator.ts` speaks it with Web Speech and drives `src/audio.ts` (Web Audio synth ambience and stings by cue). Voice quality depends on the device. Next upgrade: pre-generate recorded clips with a neural TTS and play those instead.
+
 ## Next steps, in order
 
 1. Deploy to Vercel with Upstash Redis and play one real game on phones.

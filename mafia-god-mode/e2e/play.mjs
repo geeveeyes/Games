@@ -35,6 +35,13 @@ await tv.click("text=Show on TV");
 await host.page.waitForSelector("text=Players (5)");
 await host.page.screenshot({ path: `${shots}/lobby.png`, fullPage: true });
 await tv.screenshot({ path: `${shots}/tv-lobby.png` });
+await host.page.click("button:has-text(\"Rules\")");
+await host.page.waitForSelector("text=How to play");
+await host.page.screenshot({ path: `${shots}/rules.png` });
+await host.page.keyboard.press("Escape");
+await host.page.click("text=Narrator off");
+await host.page.screenshot({ path: `${shots}/narrator.png` });
+await host.page.click("text=Narrator off");
 await host.page.click("text=Start game");
 
 const snap = {};
@@ -59,9 +66,10 @@ while (!over && Date.now() < deadline) {
       if (/vote/i.test(phaseText) && !snap.vote) { await pg.screenshot({ path: `${shots}/vote.png` }); snap.vote = 1; }
       await opt.click().catch(() => {});
     }
+    if (!snap.defense && (await pg.locator(".defender").count())) { await pg.screenshot({ path: `${shots}/defense.png` }); snap.defense = 1; }
     if (!snap.sleep && (await pg.locator("text=Keep your eyes closed").count())) { await pg.screenshot({ path: `${shots}/sleep.png` }); snap.sleep = 1; }
     if (p === host) {
-      for (const label of ["Start the vote now"]) {
+      for (const label of ["Start the vote now", "Next speaker", "Go to the final vote"]) {
         const b = pg.locator(`text=${label}`);
         if (await b.count()) await b.click().catch(() => {});
       }

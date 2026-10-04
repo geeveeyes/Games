@@ -12,18 +12,20 @@ export interface Timing {
   dawnMs: number;
   resultMs: number;
   voteAllInMs: number;
+  defenseLeadMs: number; // narration time before a defender's clock really starts
 }
 
 export const DEFAULT_TIMING: Timing = {
   revealMs: 2500,
   revealMaxMs: 90_000,
-  nightPaceMs: 3500,
+  nightPaceMs: 5000,
   nightSilentMinMs: 5000,
   nightSilentMaxMs: 9000,
   nightStepMaxMs: 45_000,
-  dawnMs: 9000,
-  resultMs: 9000,
+  dawnMs: 15_000,
+  resultMs: 12_000,
   voteAllInMs: 2500,
+  defenseLeadMs: 6000,
 };
 
 export const INSTANT_TIMING: Timing = Object.fromEntries(
@@ -62,7 +64,7 @@ function keyOf(g: Game): string {
     case "night":
       return `night:${g.round}:${g.stepIdx}:${g.stepComplete() ? 1 : 0}`;
     default:
-      return `${g.phase}:${g.round}:${g.phase === "vote" && g.voteComplete() ? 1 : 0}`;
+      return `${g.skipToken()}:${g.phase === "vote" && g.voteComplete() ? 1 : 0}`;
   }
 }
 
@@ -81,6 +83,8 @@ function delayFor(g: Game, t: Timing, rng: () => number): number | null {
       return g.settings.dayTimerSec * 1000;
     case "vote":
       return g.voteComplete() ? t.voteAllInMs : g.settings.voteTimerSec * 1000;
+    case "defense":
+      return g.settings.defenseSec * 1000 + t.defenseLeadMs;
     case "result":
       return t.resultMs;
     default:
@@ -115,6 +119,9 @@ function fire(g: Game) {
     case "vote":
       g.resolveVote();
       break;
+    case "defense":
+      g.advanceDefense();
+      break;
     case "result":
       g.beginNight();
       break;
@@ -148,7 +155,7 @@ export type Action =
   | { action: "ack"; code: string; token: string }
   | { action: "night"; code: string; token: string; target: string }
   | { action: "vote"; code: string; token: string; target: string }
-  | { action: "skip"; code: string; token: string; phase: string; round: number }
+  | { action: "skip"; code: string; token: string; at: string }
   | { action: "rematch"; code: string; token: string }
   | { action: "leave"; code: string; token: string };
 
@@ -199,7 +206,7 @@ export function applyAction(room: RoomData, a: Action, now: number, t: Timing, r
       r = g.castVote(token, a.target);
       break;
     case "skip":
-      r = hostOnly(g, token) ?? skipPhase(room, g, a.phase, a.round);
+      r = hostOnly(g, token) ?? skipPhase(room, g, a.at);
       break;
     case "rematch":
       r = hostOnly(g, token) ?? g.rematch();
@@ -221,8 +228,8 @@ function hostOnly(g: Game, id: string): Result | null {
   return g.hostId === id ? null : { ok: false, error: "Only the host can do that." };
 }
 /** Fast-forward the current wait. A stale or double tap names an old phase and does nothing. */
-function skipPhase(room: RoomData, g: Game, phase: string, round: number): Result {
-  if (g.phase === phase && g.round === round && room.due !== null) room.due = 0;
+function skipPhase(room: RoomData, g: Game, at: string): Result {
+  if (g.skipToken() === at && room.due !== null) room.due = 0;
   return { ok: true };
 }
 

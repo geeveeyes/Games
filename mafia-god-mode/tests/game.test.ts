@@ -6,10 +6,10 @@ function seeded(seed = 1) {
   return () => ((s = (s * 1664525 + 1013904223) % 4294967296) / 4294967296);
 }
 
-function setup(n = 6, patch = {}, seed = 7) {
+function setup(n = 6, patch: Record<string, unknown> = {}, seed = 7) {
   const g = new Game(seeded(seed));
   for (let i = 0; i < n; i++) g.addPlayer(`p${i}`, `Player${i}`);
-  g.updateSettings(patch);
+  g.updateSettings({ voteStyle: "quick", ...patch });
   expect(g.start().ok).toBe(true);
   g.players.forEach((p) => g.ackRole(p.id));
   g.beginNight();
@@ -69,7 +69,7 @@ describe("night", () => {
     const v = first(g, "villager");
     runNight(g, v.id, v.id);
     expect(g.player(v.id)!.alive).toBe(true);
-    expect(g.lines.at(-1)!.text).toContain("Nobody died");
+    expect(g.lines.at(-1)!.text).toMatch(/nobody died|still alive/i);
   });
   it("blocks mafia from targeting teammates", () => {
     const g = setup();
@@ -167,6 +167,67 @@ describe("day vote", () => {
     const g = setup();
     toVote(g);
     expect(g.castVote("p0", "p0").ok).toBe(false);
+  });
+});
+
+describe("trial voting", () => {
+  const toPoll = (g: Game) => {
+    runNight(g, undefined);
+    g.startDay();
+    g.startVote();
+  };
+  it("defaults to trial style with a first vote", () => {
+    const g = setup(6, { voteStyle: "trial" });
+    toPoll(g);
+    expect(g.voteStage).toBe("poll");
+  });
+  it("sends the top two to defense, then a final vote eliminates one", () => {
+    const g = setup(7, { voteStyle: "trial" });
+    toPoll(g);
+    const [a, b, c, d, e, f, h] = g.alive();
+    // a gets 3 votes, b gets 2, the rest skip
+    g.castVote(c.id, a.id); g.castVote(d.id, a.id); g.castVote(e.id, a.id);
+    g.castVote(f.id, b.id); g.castVote(h.id, b.id);
+    g.castVote(a.id, b.id); g.castVote(b.id, a.id);
+    g.resolveVote();
+    expect(g.phase).toBe("defense");
+    expect(g.defendants.sort()).toEqual([a.id, b.id].sort());
+    const first = g.defenseIdx;
+    g.advanceDefense();
+    expect(g.phase).toBe("defense");
+    expect(g.defenseIdx).toBe(first + 1);
+    g.advanceDefense();
+    expect(g.phase).toBe("vote");
+    expect(g.voteStage).toBe("final");
+    expect(g.castVote(c.id, d.id).ok).toBe(false); // must pick an accused player
+    g.alive().forEach((p) => g.castVote(p.id === a.id ? p.id : p.id, "skip"));
+    g.alive().filter((p) => ![a.id, b.id].includes(p.id)).forEach((p) => g.castVote(p.id, a.id));
+    g.resolveVote();
+    expect(g.player(a.id)!.alive).toBe(false);
+    expect(g.phase === "result" || g.phase === "over").toBe(true);
+  });
+  it("nobody is accused when skips lead the first vote", () => {
+    const g = setup(6, { voteStyle: "trial" });
+    toPoll(g);
+    const [a, b, c] = g.alive();
+    g.castVote(a.id, "skip"); g.castVote(b.id, "skip"); g.castVote(c.id, a.id);
+    g.resolveVote();
+    expect(g.phase).toBe("result");
+    expect(g.lastResult!.eliminatedId).toBeNull();
+  });
+  it("a single accused player needs more votes than the skips", () => {
+    const g = setup(6, { voteStyle: "trial" });
+    toPoll(g);
+    const [a, b, c, d] = g.alive();
+    g.castVote(b.id, a.id); g.castVote(c.id, a.id); g.castVote(d.id, "skip");
+    g.resolveVote();
+    expect(g.defendants).toEqual([a.id]);
+    g.advanceDefense();
+    expect(g.voteStage).toBe("final");
+    g.alive().forEach((p) => g.castVote(p.id, p.id === a.id ? "skip" : "skip"));
+    g.castVote(b.id, a.id);
+    g.resolveVote();
+    expect(g.player(a.id)!.alive).toBe(true); // skips outnumber the accusers
   });
 });
 

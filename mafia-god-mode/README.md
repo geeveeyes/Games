@@ -7,13 +7,15 @@ The app deals secret roles, speaks the night script, collects each private actio
 ## How it works
 
 - **Phones** are each player's private channel: role card, night action, vote.
-- **Narrator** is the browser's text-to-speech on one device (the TV/laptop, or the host's phone). Turn it on with the "Narrator" button, since browsers need a tap before they speak.
+- **Narrator** speaks a slower, theatrical script with timed pauses, using the best English voice on the device (natural/neural voices are preferred; there is a voice, speed and pitch control). Generated ambient music shifts with the phase (night drone and distant howls, daylight chimes, a heartbeat during votes) with sound cues for dawn, a death and the win, and it ducks under the voice. Everything is synthesized in the browser, with no audio files. Turn it on from the "Narrator" button on one device (the TV/laptop or the host's phone), since browsers need a tap before they play sound.
 - **Table screen** (optional): open the site on a TV or laptop, enter the room code, and choose **Show on TV**.
 - **Modes** (chosen in the lobby): in person with a TV, in person phones-only, or remote on a video call (no eyes-closed step).
 
 ## Roles and rules (v1)
 
 Mafia, Doctor, Detective, Villager. Suggested mix by player count: `floor(n/3)` Mafia, 1 Doctor, 1 Detective, the rest Villagers (4 to 20 players).
+
+Voting styles (host setting): **Trial** (default) runs a first vote to find suspects, gives the top one or two accused a timed defense, then holds a final vote; **Quick** is a single vote. Ties, or a lead for "skip", eliminate nobody. An in-app **Rules** page explains everything.
 
 Host settings: Doctor on/off, Detective on/off, Doctor self-save (default on), same-person save on consecutive nights (default on), Mafia count, reveal role on death, dead players see all roles, discussion and voting timers. Tied votes eliminate nobody.
 
@@ -57,4 +59,4 @@ Without Redis the API still runs, but rooms live in one function instance's memo
 
 ## Roadmap
 
-Godfather and Jester roles, QR join code, saved game history, sound effects, installable PWA icon set, and rejoin-by-name for lost phones.
+Studio-quality recorded narration (pre-generated clips), Godfather and Jester roles, QR join code, saved game history, sound effects, installable PWA icon set, and rejoin-by-name for lost phones.

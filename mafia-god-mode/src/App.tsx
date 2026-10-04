@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import type { Mode, Role, Settings } from "../shared/game";
+import type { Mode, Role, Settings, VoteStyle } from "../shared/game";
 import type { ClientView } from "../shared/room";
 import { call, loadSession, playerToken, saveName, saveSession, savedName, useRoom, type Session } from "./api";
-import { keepAwake, useNarrator } from "./narrator";
+import { keepAwake, plain, useNarrator } from "./narrator";
+import { RulesModal } from "./Rules";
 
 type Act = (a: Record<string, unknown>) => Promise<boolean>;
 type Player = ClientView["players"][number];
@@ -21,7 +22,8 @@ export function App() {
     setSession(null);
   }, []);
   const room = useRoom(session, leave);
-  const narrator = useNarrator(room.view, session?.mode === "watch");
+  const narrator = useNarrator(room.view);
+  const [rules, setRules] = useState(false);
 
   useEffect(() => {
     if (session) keepAwake();
@@ -34,8 +36,9 @@ export function App() {
 
   if (!session || !room.view) {
     return (
-      <Shell>
-        {session ? <p className="muted center">Connecting to room {session.code}…</p> : <Home onEnter={enter} />}
+      <Shell onRules={() => setRules(true)}>
+        {session ? <p className="muted center">Connecting to room {session.code}…</p> : <Home onEnter={enter} onRules={() => setRules(true)} />}
+        {rules && <RulesModal onClose={() => setRules(false)} />}
         {session && room.error && (
           <div className="stack">
             <p className="error">{room.error}</p>
@@ -49,33 +52,26 @@ export function App() {
   const v = room.view;
   const watch = session.mode === "watch";
   return (
-    <Shell
-      code={v.code}
-      right={
-        narrator.supported && (
-          <button className={`chip ${narrator.on ? "on" : ""}`} onClick={narrator.toggle} aria-pressed={narrator.on}>
-            {narrator.on ? "Narrator on" : "Narrator off"}
-          </button>
-        )
-      }
-    >
+    <Shell code={v.code} onRules={() => setRules(true)} right={<NarratorControl n={narrator} />}>
       {room.error && <p className="error" role="alert">{room.error}</p>}
       {watch ? (
-        <Display v={v} now={room.now} narratorOn={narrator.on} toggle={narrator.toggle} />
+        <Display v={v} now={room.now} narratorOn={narrator.s.on} enable={narrator.enable} />
       ) : (
-        <PlayerScreen v={v} act={room.act} now={room.now} onLeave={leave} setError={room.setError} />
+        <PlayerScreen v={v} act={room.act} now={room.now} onLeave={leave} />
       )}
+      {rules && <RulesModal onClose={() => setRules(false)} />}
     </Shell>
   );
 }
 
-function Shell({ children, code, right }: { children: ReactNode; code?: string; right?: ReactNode }) {
+function Shell({ children, code, right, onRules }: { children: ReactNode; code?: string; right?: ReactNode; onRules?: () => void }) {
   return (
     <div className="app">
       <header className="top">
         <span className="brand">Mafia God Mode</span>
         <span className="grow" />
         {right}
+        {onRules && <button className="chip" onClick={onRules}>Rules</button>}
         {code && <span className="chip code-chip" aria-label={`Room code ${code}`}>{code}</span>}
       </header>
       <main className="main">{children}</main>
@@ -84,7 +80,7 @@ function Shell({ children, code, right }: { children: ReactNode; code?: string; 
 }
 
 // ---------- Home ----------
-function Home({ onEnter }: { onEnter: (s: Session) => void }) {
+function Home({ onEnter, onRules }: { onEnter: (s: Session) => void; onRules: () => void }) {
   const [name, setName] = useState(savedName());
   const [code, setCode] = useState("");
   const [err, setErr] = useState("");
@@ -137,6 +133,7 @@ function Home({ onEnter }: { onEnter: (s: Session) => void }) {
         <button className="btn ghost" disabled={busy || code.length !== 4} onClick={watch}>Show on TV</button>
       </div>
       {err && <p className="error" role="alert">{err}</p>}
+      <button className="linkbtn" onClick={onRules}>New to Mafia? Read the rules</button>
     </div>
   );
 }
@@ -160,7 +157,7 @@ function Timer({ due, now, label }: { due: number | null; now: () => number; lab
 
 function Narration({ v }: { v: ClientView }) {
   const line = v.lines.at(-1);
-  return line ? <p className="narration" aria-live="polite">{line.text}</p> : null;
+  return line ? <p className="narration" aria-live="polite">{plain(line.text)}</p> : null;
 }
 
 function Pick({
@@ -228,11 +225,11 @@ function RoleCard({ role, partners }: { role: Role; partners: string[] }) {
 }
 
 function HostSkip({ v, act, label }: { v: ClientView; act: Act; label: string }) {
-  return v.you?.isHost ? <button className="btn ghost" onClick={() => act({ action: "skip", phase: v.phase, round: v.round })}>{label}</button> : null;
+  return v.you?.isHost ? <button className="btn ghost" onClick={() => act({ action: "skip", at: v.skipToken })}>{label}</button> : null;
 }
 
 // ---------- Player screens ----------
-function PlayerScreen({ v, act, now, onLeave, setError }: { v: ClientView; act: Act; now: () => number; onLeave: () => void; setError: (e: string | null) => void }) {
+function PlayerScreen({ v, act, now, onLeave }: { v: ClientView; act: Act; now: () => number; onLeave: () => void }) {
   const me = v.you;
   if (!me) {
     return (
@@ -337,19 +334,39 @@ function PlayerScreen({ v, act, now, onLeave, setError }: { v: ClientView; act: 
         </div>
       );
 
+    case "defense": {
+      const speaker = v.players.find((p) => p.id === v.defendants[v.defenseIdx]);
+      const accused = v.defendants.map((id) => v.players.find((p) => p.id === id)?.name).filter(Boolean).join(" and ");
+      const mineTurn = speaker?.id === me.id;
+      return (
+        <div className="stack gap-lg center">
+          {banner}
+          <span className="tag">The accused: {accused}</span>
+          <div className="defender">{speaker?.name}</div>
+          <p className="muted">{mineTurn ? "Your turn. Convince the village you are innocent." : "is defending themselves. Listen closely."}</p>
+          <Timer due={v.due} now={now} label="Time to speak" />
+          <HostSkip v={v} act={act} label={v.defenseIdx + 1 < v.defendants.length ? "Next speaker" : "Go to the final vote"} />
+        </div>
+      );
+    }
+
     case "vote": {
       const mine = v.vote.yourVote;
+      const final = v.vote.stage === "final";
+      const trial = v.settings.voteStyle === "trial";
+      const pool = final && v.defendants.length ? others.filter((p) => v.defendants.includes(p.id)) : others;
       const badges: Record<string, string> = {};
       for (const [id, n] of Object.entries(v.vote.counts)) if (id !== "skip") badges[id] = `${n} vote${n === 1 ? "" : "s"}`;
       return (
         <div className="stack gap-lg">
           {banner}
           <Narration v={v} />
+          <span className="tag center">{trial ? (final ? "Final vote" : "First vote") : "Vote"}</span>
           <Timer due={v.due} now={now} label="Vote ends" />
-          <Pick players={others} allowed={new Set(others.map((p) => p.id))} selected={mine} onPick={(id) => act({ action: "vote", target: id })} badges={badges} disabled={!me.alive} />
+          <Pick players={pool} allowed={new Set(pool.map((p) => p.id))} selected={mine} onPick={(id) => act({ action: "vote", target: id })} badges={badges} disabled={!me.alive} />
           {me.alive && (
             <button className={`btn ${mine === "skip" ? "" : "ghost"}`} onClick={() => act({ action: "vote", target: "skip" })}>
-              Skip vote{v.vote.counts.skip ? ` (${v.vote.counts.skip})` : ""}
+              {final && trial ? "Spare them" : "Skip vote"}{v.vote.counts.skip ? ` (${v.vote.counts.skip})` : ""}
             </button>
           )}
           <p className="muted center">{v.vote.voted} of {v.vote.eligible} have voted</p>
@@ -439,6 +456,17 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
           <span>With {Math.max(n, v.minPlayers)} players:</span>
           <b>{sg.mafia} Mafia</b><b>{sg.doctor} Doctor</b><b>{sg.detective} Detective</b><b>{sg.villager} Villager{sg.villager === 1 ? "" : "s"}</b>
         </div>
+        <div className="stack">
+          {([
+            ["trial", "Trial vote", "First vote, defenses from the top accused, then a final vote."],
+            ["quick", "Quick vote", "One vote and the top player is eliminated."],
+          ] as [VoteStyle, string, string][]).map(([id, title, text]) => (
+            <label key={id} className={`opt ${s.voteStyle === id ? "sel" : ""}`}>
+              <input type="radio" name="vstyle" checked={s.voteStyle === id} disabled={!host} onChange={() => set({ voteStyle: id })} />
+              <span><b>{title}</b><small>{text}</small></span>
+            </label>
+          ))}
+        </div>
         {toggle("useDoctor", "Include the Doctor")}
         {toggle("useDetective", "Include the Detective")}
         {toggle("doctorSelfSave", "Doctor can save themselves")}
@@ -457,6 +485,13 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
               {[60, 120, 180, 300, 600].map((k) => <option key={k} value={k}>{k / 60} min</option>)}
             </select>
           </label>
+          {s.voteStyle === "trial" && (
+            <label className="field"><span>Defense</span>
+              <select id="defense" value={s.defenseSec} disabled={!host} onChange={(e) => set({ defenseSec: Number(e.target.value) })}>
+                {[20, 30, 45, 60].map((k) => <option key={k} value={k}>{k} sec</option>)}
+              </select>
+            </label>
+          )}
           <label className="field"><span>Voting</span>
             <select id="vote" value={s.voteTimerSec} disabled={!host} onChange={(e) => set({ voteTimerSec: Number(e.target.value) })}>
               {[30, 60, 90, 120].map((k) => <option key={k} value={k}>{k} sec</option>)}
@@ -475,10 +510,10 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
 }
 
 // ---------- Table / TV screen ----------
-function Display({ v, now, narratorOn, toggle }: { v: ClientView; now: () => number; narratorOn: boolean; toggle: () => void }) {
-  const line = v.lines.at(-1)?.text ?? "Waiting for players…";
-  const label: Record<string, string> = { lobby: "Lobby", reveal: "Roles", night: "Night", dawn: "Dawn", day: "Day", vote: "Vote", result: "Result", over: "Game over" };
-  const timed = ["day", "vote"].includes(v.phase);
+function Display({ v, now, narratorOn, enable }: { v: ClientView; now: () => number; narratorOn: boolean; enable: () => void }) {
+  const line = plain(v.lines.at(-1)?.text ?? "Waiting for players…");
+  const label: Record<string, string> = { lobby: "Lobby", reveal: "Roles", night: "Night", dawn: "Dawn", day: "Day", vote: "Vote", defense: "Defense", result: "Result", over: "Game over" };
+  const timed = ["day", "vote", "defense"].includes(v.phase);
   return (
     <div className={`tv-screen ${v.phase}`}>
       <div className="tv-main">
@@ -489,7 +524,7 @@ function Display({ v, now, narratorOn, toggle }: { v: ClientView; now: () => num
           <p className="muted">Open this site on your phone, choose "Join game" and enter <b className="mono">{v.code}</b>.</p>
         )}
         {v.phase === "over" && <p className="tv-say win">{v.winner === "town" ? "Town wins" : "Mafia wins"}</p>}
-        {!narratorOn && <button className="btn" onClick={toggle}>Turn on the narrator voice</button>}
+        {!narratorOn && <button className="btn" onClick={enable}>Turn on the narrator and music</button>}
       </div>
       <div className="seats">
         {v.players.map((p) => (
@@ -499,6 +534,41 @@ function Display({ v, now, narratorOn, toggle }: { v: ClientView; now: () => num
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ---------- Narrator panel ----------
+function NarratorControl({ n }: { n: ReturnType<typeof useNarrator> }) {
+  const [open, setOpen] = useState(false);
+  if (!n.supported) return null;
+  const { s } = n;
+  return (
+    <div className="narr">
+      <button className={`chip ${s.on ? "on" : ""}`} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        {s.on ? "Narrator on" : "Narrator off"}
+      </button>
+      {open && (
+        <div className="panel stack" role="group" aria-label="Narrator settings">
+          <button className="btn" onClick={() => (s.on ? n.disable() : n.enable())}>{s.on ? "Turn narrator off" : "Turn narrator on"}</button>
+          <label className="check"><input type="checkbox" checked={s.voiceOn} onChange={(e) => n.update({ voiceOn: e.target.checked })} /><span>Spoken voice</span></label>
+          <label className="check"><input type="checkbox" checked={s.musicOn} onChange={(e) => n.update({ musicOn: e.target.checked })} /><span>Background music</span></label>
+          <label className="field"><span>Voice</span>
+            <select id="voice" value={s.voiceURI} onChange={(e) => n.update({ voiceURI: e.target.value })}>
+              <option value="">Best available</option>
+              {n.voices.map((v) => <option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>)}
+            </select>
+          </label>
+          <label className="field"><span>Speed {s.rate.toFixed(2)}</span>
+            <input type="range" min="0.6" max="1.1" step="0.02" value={s.rate} onChange={(e) => n.update({ rate: Number(e.target.value) })} /></label>
+          <label className="field"><span>Pitch {s.pitch.toFixed(2)}</span>
+            <input type="range" min="0.5" max="1.3" step="0.02" value={s.pitch} onChange={(e) => n.update({ pitch: Number(e.target.value) })} /></label>
+          <label className="field"><span>Music volume</span>
+            <input type="range" min="0" max="1" step="0.05" value={s.musicVol} onChange={(e) => n.update({ musicVol: Number(e.target.value) })} /></label>
+          <button className="btn ghost" onClick={n.test}>Test the narrator</button>
+          <p className="muted small">Voices come from your device. For the best sound, pick a “Natural” or “Neural” voice if you have one.</p>
+        </div>
+      )}
     </div>
   );
 }

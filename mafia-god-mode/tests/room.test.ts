@@ -17,6 +17,7 @@ describe("full game through the API", () => {
       const r = await call({ action: "join", code, token: `t${i}`, name: `P${i}` });
       expect(r.ok).toBe(true);
     }
+    expect((await call({ action: "settings", code, token: "t0", patch: { voteStyle: "quick" } })).ok).toBe(true);
     expect((await call({ action: "start", code, token: "t1" })).ok).toBe(false); // not host
     expect((await call({ action: "start", code, token: "t0" })).ok).toBe(true);
 
@@ -68,14 +69,14 @@ describe("full game through the API", () => {
     const code = c.code;
     for (let i = 1; i < 4; i++) await call({ action: "join", code, token: `t${i}`, name: `P${i}` });
     await call({ action: "start", code, token: "h" });
-    const first = await call({ action: "skip", code, token: "h", phase: "reveal", round: 0 });
+    const first = await call({ action: "skip", code, token: "h", at: "reveal:0:final:0" });
     if (!first.ok) throw new Error(first.error);
     expect(first.view.phase).toBe("night");
-    const second = await call({ action: "skip", code, token: "h", phase: "reveal", round: 0 });
+    const second = await call({ action: "skip", code, token: "h", at: "reveal:0:final:0" });
     if (!second.ok) throw new Error(second.error);
     expect(second.view.phase).toBe("night");
     expect(second.view.night.step).toBe("mafia");
-    expect((await call({ action: "skip", code, token: "t1", phase: "night", round: 1 })).ok).toBe(false); // not host
+    expect((await call({ action: "skip", code, token: "t1", at: "night:1:final:0" })).ok).toBe(false); // not host
   });
 
   it("rejects bad codes and missing rooms", async () => {
