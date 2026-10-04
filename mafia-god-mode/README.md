@@ -38,7 +38,8 @@ shared/game.ts     pure rules engine (no timers, no I/O); `viewFor` is the only 
 shared/room.ts     lazy timers: every request applies whatever transition is due
 shared/handler.ts  framework-agnostic request handler (create/join/poll/act)
 shared/store.ts    Redis (Upstash REST) in production, memory locally
-api/room.ts        Vercel serverless function (POST /api/room)
+functions/room.ts  Vercel function source (POST /api/room)
+api/room.js        generated single-file bundle of the above; this is what Vercel runs (`npm run build:api`)
 src/               React client (polls every 1 to 2 seconds)
 ```
 

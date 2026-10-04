@@ -3,5 +3,5 @@
     "target": "ES2022", "module": "ESNext", "moduleResolution": "bundler", "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx", "strict": true, "skipLibCheck": true, "noEmit": true, "types": ["node"], "isolatedModules": true
   },
-  "include": ["src", "shared", "api", "tests", "dev-server.ts", "vite.config.ts"]
+  "include": ["src", "shared", "functions", "tests", "dev-server.ts", "vite.config.ts"]
 }

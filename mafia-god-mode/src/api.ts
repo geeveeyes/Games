@@ -44,7 +44,13 @@ export async function call(a: Action): Promise<ApiResponse> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(a),
     });
-    return (await res.json()) as ApiResponse;
+    const text = await res.text();
+    try {
+      return JSON.parse(text) as ApiResponse;
+    } catch {
+      // The function answered with something that is not JSON (missing route, crash, or a Vercel login wall).
+      return { ok: false, error: `Game server error (HTTP ${res.status}). ${text.replace(/<[^>]*>/g, " ").trim().slice(0, 140)}` };
+    }
   } catch {
     return { ok: false, error: "Cannot reach the game server. Check your connection." };
   }

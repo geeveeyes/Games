@@ -4,10 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "concurrently -k -n api,web \"tsx watch dev-server.ts\" \"vite\"",
-    "build": "vite build",
+    "build": "npm run build:api && vite build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "e2e": "MGM_FAST=1 node e2e/play.mjs"
+    "e2e": "MGM_FAST=1 node e2e/play.mjs",
+    "build:api": "node scripts-bundle-api.mjs"
   },
   "dependencies": {
     "react": "^19.3.0",
@@ -20,6 +21,7 @@
     "@vercel/node": "^20.0.0",
     "@vitejs/plugin-react": "^6.1.1",
     "concurrently": "^10.0.5",
+    "esbuild": "^0.28.2",
     "playwright-core": "^1.63.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
