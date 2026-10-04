@@ -1,3 +1,4 @@
+import type { FeedbackItem } from "./feedback";
 import type { RoomData } from "./room";
 
 /** Room storage. Redis (Upstash REST) in production, memory for local dev and tests. */
@@ -9,6 +10,10 @@ export interface Store {
   index(code: string, listed: boolean): Promise<void>;
   openCodes(): Promise<string[]>;
   getMany(codes: string[]): Promise<(RoomData | null)[]>;
+  pushFeedback(item: FeedbackItem): Promise<void>;
+  listFeedback(limit: number): Promise<FeedbackItem[]>;
+  /** Count a hit against a key within a rolling window and return the new count (for rate limits). */
+  hit(key: string, windowSec: number): Promise<number>;
 }
 
 const TTL_SEC = 60 * 60 * 8;
@@ -16,6 +21,8 @@ const TTL_SEC = 60 * 60 * 8;
 export class MemoryStore implements Store {
   private rooms = new Map<string, string>();
   private listed = new Set<string>();
+  private feedback: FeedbackItem[] = [];
+  private hits = new Map<string, { n: number; until: number }>();
   private chains = new Map<string, Promise<void>>();
   async get(code: string) {
     const raw = this.rooms.get(code);
@@ -23,6 +30,20 @@ export class MemoryStore implements Store {
   }
   async set(code: string, room: RoomData) {
     this.rooms.set(code, JSON.stringify(room));
+  }
+  async pushFeedback(item: FeedbackItem) {
+    this.feedback.push(item);
+  }
+  async listFeedback(limit: number) {
+    return this.feedback.slice(-limit);
+  }
+  async hit(key: string, windowSec: number) {
+    const now = Date.now();
+    const cur = this.hits.get(key);
+    const rec = cur && cur.until > now ? cur : { n: 0, until: now + windowSec * 1000 };
+    rec.n += 1;
+    this.hits.set(key, rec);
+    return rec.n;
   }
   async index(code: string, listed: boolean) {
     if (listed) this.listed.add(code);
@@ -61,6 +82,19 @@ export class RedisStore implements Store {
   }
   async set(code: string, room: RoomData) {
     await this.cmd("SET", `mgm:room:${code}`, JSON.stringify(room), "EX", TTL_SEC);
+  }
+  async pushFeedback(item: FeedbackItem) {
+    await this.cmd("RPUSH", "mgm:feedback", JSON.stringify(item));
+    await this.cmd("LTRIM", "mgm:feedback", -20000, -1);
+  }
+  async listFeedback(limit: number) {
+    const raws = (await this.cmd<string[]>("LRANGE", "mgm:feedback", -limit, -1)) ?? [];
+    return raws.map((r) => JSON.parse(r) as FeedbackItem);
+  }
+  async hit(key: string, windowSec: number) {
+    const n = await this.cmd<number>("INCR", `mgm:hit:${key}`);
+    if (n === 1) await this.cmd("EXPIRE", `mgm:hit:${key}`, windowSec);
+    return n;
   }
   async index(code: string, listed: boolean) {
     await this.cmd(listed ? "SADD" : "SREM", "mgm:open", code);

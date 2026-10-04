@@ -21,6 +21,14 @@ Host settings: Doctor on/off, Detective on/off, Doctor self-save (default on), s
 
 Night order: Mafia, Doctor, Detective. If a night role is dead, the app still waits a random few seconds so nobody can tell. Mafia must agree on one victim. Players never learn who the Doctor saved.
 
+## Feedback
+
+Every screen has a **Feedback** button (and the end-of-game screen asks "How was the game?"). Players write in their own words, optionally pick a 1 to 5 rating and themes (narrator, voting, bots, rooms, looks, bugs, ideas). The server adds basic context (room code, phase, mode, player and bot counts). No names or contact details are collected, and the browser token is stored only as a short hash.
+
+- **Storage:** a Redis list (`mgm:feedback`, newest 20,000), rate-limited to 6 per person per hour. `docs/feedback.sql` is the matching SQL table for when you want to move it to Postgres or Supabase.
+- **Reading it:** open `/#admin`, enter the admin key, and filter by theme or download a CSV. Or call `GET /api/feedback` (JSON) / `?format=csv` with `Authorization: Bearer <key>`.
+- **Set the key:** add an environment variable `FEEDBACK_ADMIN_KEY` in Vercel (at least 12 characters, random). Without it the read endpoint stays disabled, and sending feedback still works.
+
 ## Rooms and joining
 
 The host chooses who can join in the lobby, much like a Discord or Slack channel:

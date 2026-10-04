@@ -1153,6 +1153,8 @@ var TTL_SEC = 60 * 60 * 8;
 var MemoryStore = class {
   rooms = /* @__PURE__ */ new Map();
   listed = /* @__PURE__ */ new Set();
+  feedback = [];
+  hits = /* @__PURE__ */ new Map();
   chains = /* @__PURE__ */ new Map();
   async get(code) {
     const raw = this.rooms.get(code);
@@ -1160,6 +1162,20 @@ var MemoryStore = class {
   }
   async set(code, room) {
     this.rooms.set(code, JSON.stringify(room));
+  }
+  async pushFeedback(item) {
+    this.feedback.push(item);
+  }
+  async listFeedback(limit) {
+    return this.feedback.slice(-limit);
+  }
+  async hit(key, windowSec) {
+    const now = Date.now();
+    const cur = this.hits.get(key);
+    const rec = cur && cur.until > now ? cur : { n: 0, until: now + windowSec * 1e3 };
+    rec.n += 1;
+    this.hits.set(key, rec);
+    return rec.n;
   }
   async index(code, listed) {
     if (listed) this.listed.add(code);
@@ -1202,6 +1218,19 @@ var RedisStore = class {
   }
   async set(code, room) {
     await this.cmd("SET", `mgm:room:${code}`, JSON.stringify(room), "EX", TTL_SEC);
+  }
+  async pushFeedback(item) {
+    await this.cmd("RPUSH", "mgm:feedback", JSON.stringify(item));
+    await this.cmd("LTRIM", "mgm:feedback", -2e4, -1);
+  }
+  async listFeedback(limit) {
+    const raws = await this.cmd("LRANGE", "mgm:feedback", -limit, -1) ?? [];
+    return raws.map((r) => JSON.parse(r));
+  }
+  async hit(key, windowSec) {
+    const n = await this.cmd("INCR", `mgm:hit:${key}`);
+    if (n === 1) await this.cmd("EXPIRE", `mgm:hit:${key}`, windowSec);
+    return n;
   }
   async index(code, listed) {
     await this.cmd(listed ? "SADD" : "SREM", "mgm:open", code);

@@ -136,3 +136,18 @@ input[type="text"], input:not([type]), select { font: 1rem var(--body); padding:
 .roomact .btn { width: auto; padding: 9px 16px; }
 .requests { border: 1px solid var(--lamp); border-radius: 10px; padding: 12px; }
 .reqact { margin-left: auto; display: flex; gap: 6px; }
+
+textarea { font: 1rem var(--body); padding: 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); width: 100%; resize: vertical; }
+.plain { border: 0; padding: 0; margin: 0; min-width: 0; }
+.plain legend { padding: 0; margin-bottom: 8px; }
+.ratings { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.rate { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; font: inherit; cursor: pointer; min-width: 0; }
+.rate b { font-family: var(--display); font-size: 1.2rem; }
+.rate span { font-size: .7rem; color: var(--muted); }
+.rate.on { border-color: var(--lamp); background: color-mix(in srgb, var(--lamp) 18%, var(--panel)); }
+.themes { display: flex; flex-wrap: wrap; gap: 8px; }
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+.chip.fb { color: var(--lamp); border-color: var(--lamp); }
+.fblist li p { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.fblist { max-height: none; }
+.top { flex-wrap: wrap; row-gap: 8px; }

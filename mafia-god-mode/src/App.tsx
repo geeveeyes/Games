@@ -3,6 +3,8 @@ import type { Mode, Role, Settings, Visibility, VoteStyle } from "../shared/game
 import type { ClientView, RoomSummary } from "../shared/room";
 import { call, callRooms, loadSession, playerToken, saveName, saveSession, savedName, useRoom, type Session } from "./api";
 import { keepAwake, plain, useNarrator } from "./narrator";
+import { Admin } from "./Admin";
+import { FeedbackModal, type FeedbackContext } from "./Feedback";
 import { RulesModal } from "./Rules";
 
 type Act = (a: Record<string, unknown>) => Promise<boolean>;
@@ -24,6 +26,13 @@ export function App() {
   const room = useRoom(session, leave);
   const narrator = useNarrator(room.view);
   const [rules, setRules] = useState(false);
+  const [feedback, setFeedback] = useState(false);
+  const [admin, setAdmin] = useState(() => location.hash === "#admin");
+  useEffect(() => {
+    const h = () => setAdmin(location.hash === "#admin");
+    window.addEventListener("hashchange", h);
+    return () => window.removeEventListener("hashchange", h);
+  }, []);
 
   useEffect(() => {
     if (session) keepAwake();
@@ -34,11 +43,29 @@ export function App() {
     setSession(s);
   };
 
+  const fbContext: FeedbackContext = room.view
+    ? {
+        room: room.view.code, phase: room.view.phase, round: room.view.round, mode: room.view.settings.mode,
+        voteStyle: room.view.settings.voteStyle, visibility: room.view.settings.visibility,
+        players: room.view.players.length, bots: room.view.players.filter((p) => p.bot).length,
+        isHost: !!room.view.you?.isHost, narrator: narrator.on, screen: session?.mode === "watch" ? "tv" : "phone",
+      }
+    : { screen: "home" };
+
+  if (admin) {
+    return (
+      <Shell>
+        <Admin />
+      </Shell>
+    );
+  }
+
   if (!session || !room.view) {
     return (
-      <Shell onRules={() => setRules(true)}>
+      <Shell onRules={() => setRules(true)} onFeedback={() => setFeedback(true)}>
         {session ? <p className="muted center">Connecting to room {session.code}…</p> : <Home onEnter={enter} onRules={() => setRules(true)} />}
         {rules && <RulesModal onClose={() => setRules(false)} />}
+        {feedback && <FeedbackModal onClose={() => setFeedback(false)} context={fbContext} />}
         {session && room.error && (
           <div className="stack">
             <p className="error">{room.error}</p>
@@ -52,19 +79,20 @@ export function App() {
   const v = room.view;
   const watch = session.mode === "watch";
   return (
-    <Shell code={v.code} onRules={() => setRules(true)} right={<NarratorControl n={narrator} />}>
+    <Shell code={v.code} onRules={() => setRules(true)} onFeedback={() => setFeedback(true)} right={<NarratorControl n={narrator} />}>
       {room.error && <p className="error" role="alert">{room.error}</p>}
       {watch ? (
         <Display v={v} now={room.now} narratorOn={narrator.on} enable={narrator.enable} />
       ) : (
-        <PlayerScreen v={v} act={room.act} now={room.now} onLeave={leave} />
+        <PlayerScreen v={v} act={room.act} now={room.now} onLeave={leave} onFeedback={() => setFeedback(true)} />
       )}
       {rules && <RulesModal onClose={() => setRules(false)} />}
+      {feedback && <FeedbackModal onClose={() => setFeedback(false)} context={fbContext} />}
     </Shell>
   );
 }
 
-function Shell({ children, code, right, onRules }: { children: ReactNode; code?: string; right?: ReactNode; onRules?: () => void }) {
+function Shell({ children, code, right, onRules, onFeedback }: { children: ReactNode; code?: string; right?: ReactNode; onRules?: () => void; onFeedback?: () => void }) {
   return (
     <div className="app">
       <header className="top">
@@ -72,6 +100,7 @@ function Shell({ children, code, right, onRules }: { children: ReactNode; code?:
         <span className="grow" />
         {right}
         {onRules && <button className="chip" onClick={onRules}>Rules</button>}
+        {onFeedback && <button className="chip fb" onClick={onFeedback}>Feedback</button>}
         {code && <span className="chip code-chip" aria-label={`Room code ${code}`}>{code}</span>}
       </header>
       <main className="main">{children}</main>
@@ -304,7 +333,7 @@ function HostSkip({ v, act, label }: { v: ClientView; act: Act; label: string })
 }
 
 // ---------- Player screens ----------
-function PlayerScreen({ v, act, now, onLeave }: { v: ClientView; act: Act; now: () => number; onLeave: () => void }) {
+function PlayerScreen({ v, act, now, onLeave, onFeedback }: { v: ClientView; act: Act; now: () => number; onLeave: () => void; onFeedback: () => void }) {
   const me = v.you;
   if (!me) {
     const hostName = v.players.find((p) => p.id === v.hostId)?.name ?? "the host";
@@ -477,6 +506,7 @@ function PlayerScreen({ v, act, now, onLeave }: { v: ClientView; act: Act; now: 
           ) : (
             <p className="muted center">Waiting for the host to start another game.</p>
           )}
+          <button className="btn ghost" onClick={onFeedback}>How was the game? Give feedback</button>
           <button className="btn ghost" onClick={onLeave}>Leave room</button>
         </div>
       );

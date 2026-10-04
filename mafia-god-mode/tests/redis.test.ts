@@ -8,6 +8,8 @@ import { RedisStore } from "../shared/store";
 // Tiny stand-in for Upstash's REST API: POST a JSON command array, get {result}.
 const data = new Map<string, string>();
 const sets = new Map<string, Set<string>>();
+const lists = new Map<string, string[]>();
+const counters = new Map<string, number>();
 let server: ReturnType<typeof createServer>;
 let url = "";
 
@@ -24,6 +26,11 @@ beforeAll(async () => {
     else if (cmd === "SREM") result = sets.get(key)?.delete(val) ? 1 : 0;
     else if (cmd === "SMEMBERS") result = [...(sets.get(key) ?? [])];
     else if (cmd === "MGET") result = args.slice(1).map((k) => data.get(k) ?? null);
+    else if (cmd === "RPUSH") (lists.get(key) ?? lists.set(key, []).get(key)!).push(val), (result = 1);
+    else if (cmd === "LTRIM") result = "OK";
+    else if (cmd === "LRANGE") result = lists.get(key) ?? [];
+    else if (cmd === "INCR") counters.set(key, (counters.get(key) ?? 0) + 1), (result = counters.get(key));
+    else if (cmd === "EXPIRE") result = 1;
     else if (cmd === "DEL") result = data.delete(key) ? 1 : 0;
     else if (cmd === "SET") {
       if (rest.includes("NX") && data.has(key)) result = null;
@@ -60,6 +67,14 @@ describe("RedisStore over the REST protocol", () => {
     expect(rooms.map((r) => r.code)).toContain(c.code);
     await call({ action: "settings", code: c.code, token: "h2", patch: { visibility: "private" } });
     expect((await handleRooms(store)).rooms.map((r) => r.code)).not.toContain(c.code);
+  });
+
+  it("stores feedback and rate limits through Redis", async () => {
+    const store = new RedisStore(url, "secret");
+    const { submitFeedback, listFeedback } = await import("../shared/feedback");
+    expect((await submitFeedback(store, { text: "Loved the bots", rating: 5, token: "p1" })).ok).toBe(true);
+    const items = await listFeedback(store);
+    expect(items.map((i) => i.text)).toContain("Loved the bots");
   });
 
   it("reports a bad token as an error, not a crash", async () => {

@@ -121,6 +121,25 @@ export function useNarrator(view: ClientView | null) {
     playNext();
   }, [view?.lines, on]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Leaving a room (or losing it) must silence everything: queued speech, pending lines, and the music.
+  useEffect(() => {
+    if (view !== null) return;
+    run.current++;
+    if (speechSupported) window.speechSynthesis.cancel();
+    ambience.current?.duck(false);
+    ambience.current?.stop();
+    setOn(false);
+  }, [view]);
+
+  // Closing the tab or navigating away also stops the voice, which would otherwise finish its sentence.
+  useEffect(() => {
+    const stop = () => {
+      if (speechSupported) window.speechSynthesis.cancel();
+    };
+    window.addEventListener("pagehide", stop);
+    return () => window.removeEventListener("pagehide", stop);
+  }, []);
+
   // No music in the lobby.
   useEffect(() => {
     if (view?.phase === "lobby" && on) ambience.current?.setMood("off");
