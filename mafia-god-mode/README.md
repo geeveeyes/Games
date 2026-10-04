@@ -53,7 +53,7 @@ One person plus bots can play a full game: `npm run e2e:solo`.
 ## Tests
 
 - `npm test`: engine, bots, rooms, feedback, Redis protocol, **saved-room compatibility** (rooms saved by older versions still load and work) and **every lobby setting**.
-- Browser tests (need Chromium; start `MGM_FAST=1 MGM_SEED_OLD_ROOM=1 npx tsx dev-server.ts` and `npx vite`): `npm run e2e` (5 players + TV), `e2e:solo` (one person + bots, also checks audio stops on leaving and chat typing), `e2e:settings` (every lobby control, fresh and old-format room), `e2e:typing` (text boxes keep focus while the room refreshes).
+- Browser tests (need Chromium; start `MGM_FAST=1 MGM_SEED_OLD_ROOM=1 npx tsx dev-server.ts` and `npx vite`): `npm run e2e` (5 players + TV), `e2e:solo` (one person + bots, also checks audio stops on leaving and chat typing), `e2e:settings` (every lobby control, fresh and old-format room), `e2e:typing` (text boxes keep focus while the room refreshes), `e2e:narrator` (turning the narrator on mid-game speaks immediately and starts the music).
 
 ## Run locally
 

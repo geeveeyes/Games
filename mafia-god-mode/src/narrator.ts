@@ -51,6 +51,17 @@ const STING: Partial<Record<Cue, Sting>> = {
   night: "gong", dawn: "bell", "dawn-death": "death", elim: "death", "win-town": "reveal", "win-mafia": "death",
 };
 
+/** The music that fits a phase, used when the narrator is switched on part-way through a game. */
+function moodFor(v: ClientView): Mood {
+  switch (v.phase) {
+    case "reveal": case "night": return "night";
+    case "dawn": case "day": case "result": return "day";
+    case "vote": case "defense": return "tense";
+    case "over": return v.winner === "town" ? "win" : "lose";
+    default: return "off";
+  }
+}
+
 /** Reads narration aloud with timed pauses and plays mood music. One device does this per game. */
 export function useNarrator(view: ClientView | null) {
   const [on, setOn] = useState(false);
@@ -92,7 +103,30 @@ export function useNarrator(view: ClientView | null) {
     next();
   }, []);
 
-  // React to new narration lines.
+  const viewRef = useRef(view);
+  viewRef.current = view;
+
+  /** Speak lines one after another, with their music and sound cues. A newer call replaces an older one. */
+  const playLines = useCallback((lines: ClientView["lines"], opts: { stings?: boolean } = {}) => {
+    const stings = opts.stings ?? true;
+    const a = amb();
+    const myRun = ++run.current;
+    if (speechSupported) window.speechSynthesis.cancel();
+    let idx = 0;
+    const playNext = () => {
+      if (run.current !== myRun || idx >= lines.length) return;
+      const line = lines[idx++];
+      const mood = line.cue ? MOOD[line.cue] : undefined;
+      if (mood) a.setMood(mood);
+      const sting = line.cue ? STING[line.cue] : undefined;
+      if (sting && stings) a.sting(sting);
+      if (speechSupported) speak(line.text, myRun, () => setTimeout(playNext, 400));
+      else setTimeout(playNext, 400);
+    };
+    playNext();
+  }, [speak]);
+
+  // React to new narration lines. Every new line is played in order, so a slow refresh never swallows the middle of a night.
   useEffect(() => {
     if (!view) return;
     const newest = view.lines.at(-1)?.seq ?? 0;
@@ -103,22 +137,7 @@ export function useNarrator(view: ClientView | null) {
     const fresh = view.lines.filter((l) => l.seq > lastSeq.current);
     if (!fresh.length) return;
     lastSeq.current = newest;
-    const a = amb();
-    const myRun = ++run.current;
-    if (speechSupported) window.speechSynthesis.cancel();
-    // Play every new line in order, so a slow poll never swallows the middle of a night.
-    let idx = 0;
-    const playNext = () => {
-      if (run.current !== myRun || idx >= fresh.length) return;
-      const line = fresh[idx++];
-      const mood = line.cue ? MOOD[line.cue] : undefined;
-      if (mood) a.setMood(mood);
-      const sting = line.cue ? STING[line.cue] : undefined;
-      if (sting) a.sting(sting);
-      if (speechSupported) speak(line.text, myRun, () => setTimeout(playNext, 400));
-      else setTimeout(playNext, 400);
-    };
-    playNext();
+    playLines(fresh);
   }, [view?.lines, on]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Leaving a room (or losing it) must silence everything: queued speech, pending lines, and the music.
@@ -145,13 +164,21 @@ export function useNarrator(view: ClientView | null) {
     if (view?.phase === "lobby" && on) ambience.current?.setMood("off");
   }, [view?.phase, on]);
 
+  /**
+   * Turn the narrator on, at any point in the game. It immediately says where the game is right now
+   * (the latest narration), then keeps narrating new lines. Speech starts synchronously inside the tap,
+   * because some browsers only allow speech that begins during a user gesture.
+   */
   const enable = useCallback(async () => {
-    await amb().start();
+    const v = viewRef.current;
+    const current = v?.lines.at(-1);
+    if (current) lastSeq.current = current.seq; // the effect must not repeat it
     setOn(true);
-    const a = amb();
-    if (view && ["night", "reveal"].includes(view.phase)) a.setMood("night");
-    if (view && ["day", "dawn", "result"].includes(view.phase)) a.setMood("day");
-  }, [view]);
+    if (current) playLines([current], { stings: false });
+    await amb().start();
+    amb().setVolume(MUSIC_VOL);
+    if (v) amb().setMood(moodFor(v));
+  }, [playLines]);
 
   const disable = useCallback(() => {
     run.current++;

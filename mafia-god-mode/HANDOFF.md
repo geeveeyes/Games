@@ -28,6 +28,8 @@ Script lives in `shared/game.ts` (`narrate(text, cue)`; `|` = short pause, `||` 
 
 ## Narrator lifecycle
 
+Turning the narrator on mid-game: `enable()` speaks the latest line immediately (synchronously in the tap, which iOS needs), sets the music for the current phase, and records `lastSeq` so the line is not repeated. `e2e/narrator-midgame.mjs` stubs speech and checks this.
+
 `useNarrator` stops speech and music whenever the room view is gone (leaving a room). `e2e/solo.mjs` counts live Web Audio nodes after leaving and fails if any remain.
 
 ## Rooms directory
