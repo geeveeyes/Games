@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import type { Mode, Role, Settings, VoteStyle } from "../shared/game";
-import type { ClientView } from "../shared/room";
-import { call, loadSession, playerToken, saveName, saveSession, savedName, useRoom, type Session } from "./api";
+import type { Mode, Role, Settings, Visibility, VoteStyle } from "../shared/game";
+import type { ClientView, RoomSummary } from "../shared/room";
+import { call, callRooms, loadSession, playerToken, saveName, saveSession, savedName, useRoom, type Session } from "./api";
 import { keepAwake, plain, useNarrator } from "./narrator";
 import { RulesModal } from "./Rules";
 
@@ -80,6 +80,7 @@ function Shell({ children, code, right, onRules }: { children: ReactNode; code?:
 }
 
 // ---------- Home ----------
+const MODE_LABEL: Record<string, string> = { table: "TV or laptop", phones: "Phones only", remote: "Remote" };
 function Home({ onEnter, onRules }: { onEnter: (s: Session) => void; onRules: () => void }) {
   const [name, setName] = useState(savedName());
   const [code, setCode] = useState("");
@@ -105,12 +106,36 @@ function Home({ onEnter, onRules }: { onEnter: (s: Session) => void; onRules: ()
       const r = await call({ action: "join", code: c, token: playerToken(), name });
       r.ok ? onEnter({ code: r.code, mode: "player" }) : setErr(r.error);
     });
-  const watch = () =>
+  const watch = (c = code.trim().toUpperCase()) =>
     run(async () => {
-      const c = code.trim().toUpperCase();
       const r = await call({ action: "watch", code: c });
       r.ok ? onEnter({ code: r.code, mode: "watch" }) : setErr(r.error);
     });
+  const joinCode = (c: string) =>
+    run(async () => {
+      if (!name.trim()) return setErr("Enter your name first, then pick a room.");
+      saveName(name);
+      const r = await call({ action: "join", code: c, token: playerToken(), name });
+      r.ok ? onEnter({ code: r.code, mode: "player" }) : setErr(r.error);
+    });
+
+  const [rooms, setRooms] = useState<RoomSummary[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const load = async () => {
+      if (!document.hidden) {
+        const r = await callRooms();
+        if (live) setRooms(r);
+      }
+      if (live) timer = setTimeout(load, 4000);
+    };
+    load();
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, []);
 
   return (
     <div className="stack gap-lg">
@@ -124,13 +149,30 @@ function Home({ onEnter, onRules }: { onEnter: (s: Session) => void; onRules: ()
       </label>
       <button className="btn" disabled={busy || !name.trim()} onClick={create}>Create a game</button>
       <div className="divider"><span>or join one</span></div>
+      <section className="stack" aria-label="Open rooms">
+        <h3>Open rooms</h3>
+        {rooms === null && <p className="muted small">Looking for rooms…</p>}
+        {rooms?.length === 0 && <p className="muted small">No open rooms right now. Create one, or enter a room code below.</p>}
+        {rooms?.map((r) => (
+          <div key={r.code} className="roomcard">
+            <div className="roominfo">
+              <b>{r.name}</b>
+              <span className="muted small">{r.host} · {r.players}/{r.max} players · {MODE_LABEL[r.mode] ?? r.mode}</span>
+            </div>
+            <div className="roomact">
+              <button className="btn" disabled={busy} onClick={() => joinCode(r.code)}>{r.visibility === "ask" ? "Ask to join" : "Join"}</button>
+              {r.visibility === "open" && <button className="btn ghost" disabled={busy} onClick={() => watch(r.code)}>Watch</button>}
+            </div>
+          </div>
+        ))}
+      </section>
       <label className="field">
         <span>Room code</span>
         <input id="code" className="codeinput" value={code} maxLength={4} autoCapitalize="characters" autoComplete="off" onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="KXRT" />
       </label>
       <div className="row2">
         <button className="btn" disabled={busy || code.length !== 4 || !name.trim()} onClick={join}>Join game</button>
-        <button className="btn ghost" disabled={busy || code.length !== 4} onClick={watch}>Show on TV</button>
+        <button className="btn ghost" disabled={busy || code.length !== 4} onClick={() => watch()}>Show on TV</button>
       </div>
       {err && <p className="error" role="alert">{err}</p>}
       <button className="linkbtn" onClick={onRules}>New to Mafia? Read the rules</button>
@@ -265,10 +307,20 @@ function HostSkip({ v, act, label }: { v: ClientView; act: Act; label: string })
 function PlayerScreen({ v, act, now, onLeave }: { v: ClientView; act: Act; now: () => number; onLeave: () => void }) {
   const me = v.you;
   if (!me) {
+    const hostName = v.players.find((p) => p.id === v.hostId)?.name ?? "the host";
+    const msg =
+      v.joinStatus === "pending" ? `Waiting for ${hostName} to let you in…`
+      : v.joinStatus === "declined" ? `${hostName} did not accept your request.`
+      : v.joinStatus === "blocked" ? "You were removed from this room."
+      : "You are not in this room.";
     return (
-      <div className="stack">
-        <p>You are not in this room.</p>
-        <button className="btn" onClick={onLeave}>Back</button>
+      <div className="stack gap-lg center">
+        <h2>{v.settings.roomName || "Game room"}</h2>
+        <p className={v.joinStatus === "pending" ? "narration" : "muted"} aria-live="polite">{msg}</p>
+        {v.joinStatus === "declined" && <button className="btn" onClick={() => act({ action: "join", name: savedName() })}>Ask again</button>}
+        <button className="btn ghost" onClick={async () => { await act({ action: "leave" }); onLeave(); }}>
+          {v.joinStatus === "pending" ? "Cancel request" : "Back"}
+        </button>
       </div>
     );
   }
@@ -431,7 +483,7 @@ function PlayerScreen({ v, act, now, onLeave }: { v: ClientView; act: Act; now: 
   }
 }
 
-function Roster({ players, showRoles, onRemove }: { players: Player[]; showRoles?: boolean; onRemove?: (id: string) => void }) {
+function Roster({ players, showRoles, onRemove, hostId }: { players: Player[]; showRoles?: boolean; onRemove?: (id: string) => void; hostId?: string | null }) {
   return (
     <div className="roster">
       {players.map((p) => (
@@ -439,7 +491,8 @@ function Roster({ players, showRoles, onRemove }: { players: Player[]; showRoles
           <span className="av">{p.name[0]}</span>
           <span>{p.name}</span>
           {p.bot && <span className="rtag bot">bot</span>}
-          {p.bot && onRemove && <button className="x" aria-label={`Remove ${p.name}`} onClick={() => onRemove(p.id)}>×</button>}
+          {p.id === hostId && <span className="rtag">host</span>}
+          {onRemove && p.id !== hostId && <button className="x" aria-label={`Remove ${p.name}`} onClick={() => onRemove(p.id)}>×</button>}
           {(showRoles || p.role) && p.role && <span className="rtag">{ROLE_INFO[p.role].title}</span>}
           {!p.alive && <span className="rtag">out</span>}
         </div>
@@ -459,6 +512,8 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
   const host = !!v.you?.isHost;
   const s = v.settings;
   const set = (patch: Partial<Settings>) => act({ action: "settings", patch });
+  const [roomName, setRoomName] = useState(s.roomName);
+  useEffect(() => setRoomName(s.roomName), [s.roomName]);
   const n = v.players.length;
   const enough = n >= v.minPlayers;
   const sg = v.suggested;
@@ -477,7 +532,26 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
       </div>
       <section className="stack">
         <h3>Players ({n})</h3>
-        <Roster players={v.players.map((p) => ({ ...p, role: null }))} onRemove={host ? (id) => act({ action: "removeBot", target: id }) : undefined} />
+        {host && v.pending.length > 0 && (
+          <div className="stack requests" aria-label="Join requests">
+            <h3>Wants to join</h3>
+            {v.pending.map((p) => (
+              <div key={p.id} className="prow static">
+                <span className="av">{p.name[0]}</span>
+                <span>{p.name}</span>
+                <span className="reqact">
+                  <button className="chip on" onClick={() => act({ action: "admit", target: p.id })}>Let in</button>
+                  <button className="chip" onClick={() => act({ action: "decline", target: p.id })}>Decline</button>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        <Roster
+          players={v.players.map((p) => ({ ...p, role: null }))}
+          onRemove={host ? (id) => act({ action: v.players.find((p) => p.id === id)?.bot ? "removeBot" : "kick", target: id }) : undefined}
+          hostId={v.hostId}
+        />
         {host && (
           <div className="row2">
             <button className="btn ghost" onClick={() => act({ action: "addBot" })}>Add a bot</button>
@@ -487,6 +561,22 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
         {!enough && <p className="muted">Need at least {v.minPlayers} players. Add bots to fill empty seats.</p>}
       </section>
       <section className="stack">
+        <h3>Who can join</h3>
+        <div className="stack">
+          {([
+            ["private", "Private", "Not listed. People need the room code."],
+            ["open", "Open", "Listed on the home screen. Anyone can join with one tap."],
+            ["ask", "Ask to join", "Listed, but you approve each person."],
+          ] as [Visibility, string, string][]).map(([id, title, text]) => (
+            <label key={id} className={`opt ${s.visibility === id ? "sel" : ""}`}>
+              <input type="radio" name="vis" checked={s.visibility === id} disabled={!host} onChange={() => set({ visibility: id })} />
+              <span><b>{title}</b><small>{text}</small></span>
+            </label>
+          ))}
+        </div>
+        <label className="field"><span>Room name</span>
+          <input id="roomname" value={roomName} maxLength={30} disabled={!host} onChange={(e) => setRoomName(e.target.value)} onBlur={() => roomName !== s.roomName && set({ roomName })} placeholder="e.g. Family night" />
+        </label>
         <h3>Game setup {host ? "" : "(host controls)"}</h3>
         <div className="stack">
           {MODES.map((m) => (

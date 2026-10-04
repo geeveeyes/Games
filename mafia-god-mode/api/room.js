@@ -38,7 +38,9 @@ var DEFAULT_SETTINGS = {
   dayTimerSec: 180,
   voteTimerSec: 60,
   voteStyle: "trial",
-  defenseSec: 30
+  defenseSec: 30,
+  visibility: "private",
+  roomName: ""
 };
 var MIN_PLAYERS = 4;
 var MAX_PLAYERS = 20;
@@ -98,6 +100,9 @@ var Game = class _Game {
   lines = [];
   talk = [];
   talkSeq = 0;
+  pending = [];
+  declined = [];
+  blocked = [];
   notes = {};
   // night
   steps = [];
@@ -149,6 +154,7 @@ var Game = class _Game {
       existing.connected = true;
       return ok();
     }
+    if (this.blocked.includes(id)) return fail("You were removed from this room.");
     if (this.phase !== "lobby") return fail("The game has already started.");
     const clean = name.trim().slice(0, 16);
     if (!clean) return fail("Enter a name.");
@@ -159,9 +165,46 @@ var Game = class _Game {
     return ok();
   }
   removePlayer(id) {
+    this.pending = this.pending.filter((p) => p.id !== id);
+    if (!this.player(id)) return ok();
     if (this.phase !== "lobby") return fail("Players can only leave from the lobby.");
     this.players = this.players.filter((p) => p.id !== id);
     if (this.hostId === id) this.hostId = this.players.find((p) => p.connected && !p.bot)?.id ?? this.players.find((p) => !p.bot)?.id ?? null;
+    return ok();
+  }
+  /** Ask to join (rooms set to "Ask to join"). The host answers with admit or decline. */
+  requestJoin(id, name) {
+    if (this.player(id)) return ok();
+    if (this.blocked.includes(id)) return fail("You were removed from this room.");
+    if (this.phase !== "lobby") return fail("The game has already started.");
+    const clean = name.trim().slice(0, 16);
+    if (!clean) return fail("Enter a name.");
+    if (this.players.some((p) => p.name.toLowerCase() === clean.toLowerCase())) return fail("That name is taken.");
+    this.declined = this.declined.filter((d) => d !== id);
+    this.pending = this.pending.filter((p) => p.id !== id);
+    if (this.pending.length >= 10) return fail("Too many people are waiting. Try again soon.");
+    this.pending.push({ id, name: clean });
+    return ok();
+  }
+  admit(id) {
+    const req = this.pending.find((p) => p.id === id);
+    if (!req) return fail("That request is gone.");
+    this.pending = this.pending.filter((p) => p.id !== id);
+    return this.addPlayer(req.id, req.name);
+  }
+  decline(id) {
+    this.pending = this.pending.filter((p) => p.id !== id);
+    if (!this.declined.includes(id)) this.declined.push(id);
+    return ok();
+  }
+  /** Remove a person and stop them rejoining this room. */
+  kick(id) {
+    if (this.phase !== "lobby") return fail("People can only be removed from the lobby.");
+    const p = this.player(id);
+    if (!p || p.bot) return fail("That player cannot be removed.");
+    if (id === this.hostId) return fail("The host cannot be removed.");
+    this.players = this.players.filter((q) => q.id !== id);
+    if (!this.blocked.includes(id)) this.blocked.push(id);
     return ok();
   }
   addBot() {
@@ -211,6 +254,8 @@ var Game = class _Game {
     s.voteTimerSec = clamp(Math.round(Number(s.voteTimerSec)), 15, 300);
     s.defenseSec = clamp(Math.round(Number(s.defenseSec)), 15, 120);
     if (!["trial", "quick"].includes(s.voteStyle)) return fail("Unknown voting style.");
+    if (!["open", "ask", "private"].includes(s.visibility)) return fail("Unknown room visibility.");
+    s.roomName = String(s.roomName ?? "").replace(/\s+/g, " ").trim().slice(0, 30);
     s.mafiaCount = s.mafiaCount == null ? null : clamp(Math.round(Number(s.mafiaCount)), 1, 9);
     for (const k of ["doctorSelfSave", "doctorRepeatSave", "useDoctor", "useDetective", "revealRoleOnDeath", "deadSeeRoles"]) {
       s[k] = Boolean(s[k]);
@@ -560,6 +605,8 @@ var Game = class _Game {
       winner: this.winner,
       lines: this.lines.slice(-12),
       talk: this.talk.slice(-14),
+      joinStatus: me ? null : playerId ? this.blocked.includes(playerId) ? "blocked" : this.pending.some((p) => p.id === playerId) ? "pending" : this.declined.includes(playerId) ? "declined" : null : null,
+      pending: playerId && playerId === this.hostId ? this.pending : [],
       players: this.players.map((p) => ({
         id: p.id,
         name: p.name,
@@ -932,7 +979,16 @@ function applyAction(room, a, now, t, rng = Math.random) {
   const token = "token" in a && a.token || "";
   switch (a.action) {
     case "join":
-      r = g.addPlayer(a.token, a.name);
+      r = g.settings.visibility === "ask" && g.players.length > 0 && !g.player(a.token) ? g.requestJoin(a.token, a.name) : g.addPlayer(a.token, a.name);
+      break;
+    case "admit":
+      r = hostOnly(g, token) ?? g.admit(a.target);
+      break;
+    case "decline":
+      r = hostOnly(g, token) ?? g.decline(a.target);
+      break;
+    case "kick":
+      r = hostOnly(g, token) ?? g.kick(a.target);
       break;
     case "settings":
       r = hostOnly(g, token) ?? g.updateSettings(a.patch);
@@ -994,9 +1050,47 @@ function heartbeat(room, id, now) {
   room.seen[id] = now;
   return true;
 }
+function isListed(g) {
+  return g.phase === "lobby" && g.settings.visibility !== "private" && g.players.some((p) => !p.bot);
+}
+function summarize(room) {
+  const g = load(room);
+  if (!isListed(g)) return null;
+  const host = g.player(g.hostId)?.name ?? "Host";
+  return {
+    code: room.code,
+    name: g.settings.roomName || `${host}'s game`,
+    host,
+    players: g.players.length,
+    max: 20,
+    mode: g.settings.mode,
+    visibility: g.settings.visibility
+  };
+}
 
 // shared/handler.ts
 var err = (error, status = 400) => ({ ok: false, error, status });
+async function syncIndex(store, room) {
+  const listed = isListed(load(room));
+  if ((room.listed ?? false) !== listed) {
+    room.listed = listed;
+    await store.index(room.code, listed);
+  }
+}
+async function handleRooms(store) {
+  const codes = (await store.openCodes()).slice(0, 60);
+  const docs = await store.getMany(codes);
+  const rooms = [];
+  await Promise.all(
+    docs.map(async (doc, i) => {
+      const s = doc ? summarize(doc) : null;
+      if (s) rooms.push(s);
+      else await store.index(codes[i], false);
+    })
+  );
+  rooms.sort((a, b) => b.players - a.players || a.name.localeCompare(b.name));
+  return { ok: true, rooms: rooms.slice(0, 25) };
+}
 async function handle(a, store, now = Date.now(), timing = DEFAULT_TIMING, rng = Math.random) {
   if (!a || typeof a !== "object" || typeof a.action !== "string") return err("Bad request.");
   if (a.action === "create") {
@@ -1010,6 +1104,9 @@ async function handle(a, store, now = Date.now(), timing = DEFAULT_TIMING, rng =
         const r = applyAction(room, { action: "join", code: code2, token: a.token, name: a.name }, now, timing, rng);
         if (!r.ok) return err(r.error);
         room.seen[a.token] = now;
+        const g0 = load(room);
+        g0.updateSettings({ roomName: `${g0.players[0].name}'s game` });
+        room.game = g0.toJSON();
         await store.set(code2, room);
         return { ok: true, code: code2, view: buildView(room, a.token, now) };
       } finally {
@@ -1040,6 +1137,7 @@ async function handle(a, store, now = Date.now(), timing = DEFAULT_TIMING, rng =
     if (result.ok) {
       heartbeat(room, token, now);
       if (a.action === "join" && token) room.seen[token] = now;
+      await syncIndex(store, room);
       await store.set(code, room);
       return { ok: true, code, view: buildView(room, token, now) };
     }
@@ -1054,6 +1152,7 @@ async function handle(a, store, now = Date.now(), timing = DEFAULT_TIMING, rng =
 var TTL_SEC = 60 * 60 * 8;
 var MemoryStore = class {
   rooms = /* @__PURE__ */ new Map();
+  listed = /* @__PURE__ */ new Set();
   chains = /* @__PURE__ */ new Map();
   async get(code) {
     const raw = this.rooms.get(code);
@@ -1061,6 +1160,16 @@ var MemoryStore = class {
   }
   async set(code, room) {
     this.rooms.set(code, JSON.stringify(room));
+  }
+  async index(code, listed) {
+    if (listed) this.listed.add(code);
+    else this.listed.delete(code);
+  }
+  async openCodes() {
+    return [...this.listed];
+  }
+  async getMany(codes) {
+    return Promise.all(codes.map((c) => this.get(c)));
   }
   async lock(code) {
     const prev = this.chains.get(code) ?? Promise.resolve();
@@ -1094,6 +1203,17 @@ var RedisStore = class {
   async set(code, room) {
     await this.cmd("SET", `mgm:room:${code}`, JSON.stringify(room), "EX", TTL_SEC);
   }
+  async index(code, listed) {
+    await this.cmd(listed ? "SADD" : "SREM", "mgm:open", code);
+  }
+  async openCodes() {
+    return await this.cmd("SMEMBERS", "mgm:open") ?? [];
+  }
+  async getMany(codes) {
+    if (!codes.length) return [];
+    const raws = await this.cmd("MGET", ...codes.map((c) => `mgm:room:${c}`));
+    return raws.map((r) => r ? JSON.parse(r) : null);
+  }
   async lock(code) {
     const key = `mgm:lock:${code}`;
     const id = Math.random().toString(36).slice(2);
@@ -1124,6 +1244,7 @@ async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Use POST." });
   try {
+    if (req.body?.action === "rooms") return res.status(200).json(await handleRooms(defaultStore()));
     const out = await handle(req.body, defaultStore());
     return res.status(out.ok ? 200 : out.status ?? 400).json(out);
   } catch (e) {

@@ -5,6 +5,8 @@
 export type Role = "mafia" | "doctor" | "detective" | "villager";
 export type Phase = "lobby" | "reveal" | "night" | "dawn" | "day" | "vote" | "defense" | "result" | "over";
 export type VoteStyle = "trial" | "quick";
+/** open: listed, one-click join. ask: listed, the host approves each person. private: not listed, code only. */
+export type Visibility = "open" | "ask" | "private";
 export type VoteStage = "poll" | "final";
 export type Mode = "table" | "phones" | "remote";
 export type NightStep = "mafia" | "doctor" | "detective";
@@ -23,6 +25,8 @@ export interface Settings {
   voteTimerSec: number;
   voteStyle: VoteStyle; // trial: first vote, defenses, final vote. quick: one vote.
   defenseSec: number;
+  visibility: Visibility;
+  roomName: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -38,6 +42,8 @@ export const DEFAULT_SETTINGS: Settings = {
   voteTimerSec: 60,
   voteStyle: "trial",
   defenseSec: 30,
+  visibility: "private",
+  roomName: "",
 };
 
 export const MIN_PLAYERS = 4;
@@ -123,6 +129,9 @@ export class Game {
   lines: Line[] = [];
   talk: Talk[] = [];
   talkSeq = 0;
+  pending: { id: string; name: string }[] = [];
+  declined: string[] = [];
+  blocked: string[] = [];
   notes: Record<string, Note[]> = {};
 
   // night
@@ -180,6 +189,7 @@ export class Game {
       existing.connected = true;
       return ok();
     }
+    if (this.blocked.includes(id)) return fail("You were removed from this room.");
     if (this.phase !== "lobby") return fail("The game has already started.");
     const clean = name.trim().slice(0, 16);
     if (!clean) return fail("Enter a name.");
@@ -191,9 +201,50 @@ export class Game {
   }
 
   removePlayer(id: string): Result {
+    this.pending = this.pending.filter((p) => p.id !== id);
+    if (!this.player(id)) return ok();
     if (this.phase !== "lobby") return fail("Players can only leave from the lobby.");
     this.players = this.players.filter((p) => p.id !== id);
     if (this.hostId === id) this.hostId = this.players.find((p) => p.connected && !p.bot)?.id ?? this.players.find((p) => !p.bot)?.id ?? null;
+    return ok();
+  }
+
+  /** Ask to join (rooms set to "Ask to join"). The host answers with admit or decline. */
+  requestJoin(id: string, name: string): Result {
+    if (this.player(id)) return ok();
+    if (this.blocked.includes(id)) return fail("You were removed from this room.");
+    if (this.phase !== "lobby") return fail("The game has already started.");
+    const clean = name.trim().slice(0, 16);
+    if (!clean) return fail("Enter a name.");
+    if (this.players.some((p) => p.name.toLowerCase() === clean.toLowerCase())) return fail("That name is taken.");
+    this.declined = this.declined.filter((d) => d !== id);
+    this.pending = this.pending.filter((p) => p.id !== id);
+    if (this.pending.length >= 10) return fail("Too many people are waiting. Try again soon.");
+    this.pending.push({ id, name: clean });
+    return ok();
+  }
+
+  admit(id: string): Result {
+    const req = this.pending.find((p) => p.id === id);
+    if (!req) return fail("That request is gone.");
+    this.pending = this.pending.filter((p) => p.id !== id);
+    return this.addPlayer(req.id, req.name);
+  }
+
+  decline(id: string): Result {
+    this.pending = this.pending.filter((p) => p.id !== id);
+    if (!this.declined.includes(id)) this.declined.push(id);
+    return ok();
+  }
+
+  /** Remove a person and stop them rejoining this room. */
+  kick(id: string): Result {
+    if (this.phase !== "lobby") return fail("People can only be removed from the lobby.");
+    const p = this.player(id);
+    if (!p || p.bot) return fail("That player cannot be removed.");
+    if (id === this.hostId) return fail("The host cannot be removed.");
+    this.players = this.players.filter((q) => q.id !== id);
+    if (!this.blocked.includes(id)) this.blocked.push(id);
     return ok();
   }
 
@@ -241,6 +292,8 @@ export class Game {
     s.voteTimerSec = clamp(Math.round(Number(s.voteTimerSec)), 15, 300);
     s.defenseSec = clamp(Math.round(Number(s.defenseSec)), 15, 120);
     if (!(["trial", "quick"] as const).includes(s.voteStyle)) return fail("Unknown voting style.");
+    if (!(["open", "ask", "private"] as const).includes(s.visibility)) return fail("Unknown room visibility.");
+    s.roomName = String(s.roomName ?? "").replace(/\s+/g, " ").trim().slice(0, 30);
     s.mafiaCount = s.mafiaCount == null ? null : clamp(Math.round(Number(s.mafiaCount)), 1, 9);
     for (const k of ["doctorSelfSave", "doctorRepeatSave", "useDoctor", "useDetective", "revealRoleOnDeath", "deadSeeRoles"] as const) {
       s[k] = Boolean(s[k]);
@@ -625,6 +678,8 @@ export class Game {
       winner: this.winner,
       lines: this.lines.slice(-12),
       talk: this.talk.slice(-14),
+      joinStatus: me ? null : playerId ? (this.blocked.includes(playerId) ? "blocked" : this.pending.some((p) => p.id === playerId) ? "pending" : this.declined.includes(playerId) ? "declined" : null) : null,
+      pending: playerId && playerId === this.hostId ? this.pending : [],
       players: this.players.map((p) => ({
         id: p.id,
         name: p.name,

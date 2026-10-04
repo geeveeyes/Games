@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Action, ApiResponse, ClientView } from "../shared/room";
+import type { Action, ApiResponse, ClientView, RoomSummary } from "../shared/room";
 
 const get = (k: string) => {
   try {
@@ -53,6 +53,20 @@ export async function call(a: Action): Promise<ApiResponse> {
     }
   } catch {
     return { ok: false, error: "Cannot reach the game server. Check your connection." };
+  }
+}
+
+export async function callRooms(): Promise<RoomSummary[]> {
+  try {
+    const res = await fetch("/api/room", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "rooms" }),
+    });
+    const data = (await res.json()) as { ok: boolean; rooms?: RoomSummary[] };
+    return data.ok ? (data.rooms ?? []) : [];
+  } catch {
+    return [];
   }
 }
 

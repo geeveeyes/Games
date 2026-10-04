@@ -62,29 +62,33 @@ describe("bots", () => {
   });
 
   it("a bot answers when you mention it by name", async () => {
-    const t = await setup(4);
-    await t.call({ action: "start", code: t.code, token: "me" });
+    // The bots may kill the only human on night one; try a fresh game when that happens.
     let said = false;
-    for (let i = 0; i < 300 && !said; i++) {
-      t.advance(1000);
-      const r = await t.call({ action: "poll", code: t.code, token: "me" });
-      if (!r.ok) throw new Error(r.error);
-      const v = r.view;
-      if (v.phase === "reveal") await t.call({ action: "ack", code: t.code, token: "me" });
-      if (v.phase === "night" && v.night.yourTargets.length && v.night.yourPick === null) {
-        await t.call({ action: "night", code: t.code, token: "me", target: v.night.yourTargets[0] });
+    for (let attempt = 0; attempt < 10 && !said; attempt++) {
+      const t = await setup(4);
+      await t.call({ action: "start", code: t.code, token: "me" });
+      for (let i = 0; i < 120 && !said; i++) {
+        t.advance(1000);
+        const r = await t.call({ action: "poll", code: t.code, token: "me" });
+        if (!r.ok) throw new Error(r.error);
+        const v = r.view;
+        if (v.phase === "over" || (v.you && !v.you.alive)) break;
+        if (v.phase === "reveal") await t.call({ action: "ack", code: t.code, token: "me" });
+        if (v.phase === "night" && v.night.yourTargets.length && v.night.yourPick === null) {
+          await t.call({ action: "night", code: t.code, token: "me", target: v.night.yourTargets[0] });
+        }
+        if (v.phase === "day" && v.you?.alive) {
+          const bot = v.players.find((p) => p.bot && p.alive)!;
+          const s = await t.call({ action: "say", code: t.code, token: "me", text: `${bot.name}, you look suspicious` });
+          expect(s.ok).toBe(true);
+          t.advance(100);
+          const after = await t.call({ action: "poll", code: t.code, token: "me" });
+          if (!after.ok) throw new Error();
+          expect(after.view.talk.some((x) => x.id === bot.id)).toBe(true);
+          said = true;
+        }
+        t.advance(40_000);
       }
-      if (v.phase === "day" && v.you?.alive) {
-        const bot = v.players.find((p) => p.bot && p.alive)!;
-        const s = await t.call({ action: "say", code: t.code, token: "me", text: `${bot.name}, you look suspicious` });
-        expect(s.ok).toBe(true);
-        t.advance(100);
-        const after = await t.call({ action: "poll", code: t.code, token: "me" });
-        if (!after.ok) throw new Error();
-        expect(after.view.talk.some((x) => x.id === bot.id)).toBe(true);
-        said = true;
-      }
-      t.advance(40_000);
     }
     expect(said).toBe(true);
   });

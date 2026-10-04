@@ -128,3 +128,11 @@ input[type="text"], input:not([type]), select { font: 1rem var(--body); padding:
 .talkform { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .talkform .btn { width: auto; padding-inline: 18px; }
 .tv-talk { width: 100%; }
+
+.roomcard { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.roominfo { display: flex; flex-direction: column; min-width: 0; flex: 1 1 160px; }
+.roominfo b { overflow-wrap: anywhere; }
+.roomact { display: flex; gap: 8px; }
+.roomact .btn { width: auto; padding: 9px 16px; }
+.requests { border: 1px solid var(--lamp); border-radius: 10px; padding: 12px; }
+.reqact { margin-left: auto; display: flex; gap: 6px; }

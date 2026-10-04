@@ -1,8 +1,33 @@
-import { type Action, type ApiResponse, DEFAULT_TIMING, HEARTBEAT_MS, type Timing, applyAction, buildView, heartbeat, newRoom, randomCode, tick } from "./room";
+import { load, type RoomData, type Action, type ApiResponse, type RoomSummary, isListed, summarize, DEFAULT_TIMING, HEARTBEAT_MS, type Timing, applyAction, buildView, heartbeat, newRoom, randomCode, tick } from "./room";
 import type { Result } from "./game";
 import type { Store } from "./store";
 
 const err = (error: string, status = 400): ApiResponse => ({ ok: false, error, status });
+
+/** Keep the directory in step with a room: add it when it becomes listed, drop it when it stops. */
+async function syncIndex(store: Store, room: RoomData) {
+  const listed = isListed(load(room));
+  if ((room.listed ?? false) !== listed) {
+    room.listed = listed;
+    await store.index(room.code, listed);
+  }
+}
+
+/** The open-rooms directory. Stale entries (expired, started, or made private) are cleaned up as they are found. */
+export async function handleRooms(store: Store): Promise<{ ok: true; rooms: RoomSummary[] }> {
+  const codes = (await store.openCodes()).slice(0, 60);
+  const docs = await store.getMany(codes);
+  const rooms: RoomSummary[] = [];
+  await Promise.all(
+    docs.map(async (doc, i) => {
+      const s = doc ? summarize(doc) : null;
+      if (s) rooms.push(s);
+      else await store.index(codes[i], false);
+    }),
+  );
+  rooms.sort((a, b) => b.players - a.players || a.name.localeCompare(b.name));
+  return { ok: true, rooms: rooms.slice(0, 25) };
+}
 
 /** Framework-agnostic request handler used by the Vercel function and the dev server. */
 export async function handle(
@@ -25,6 +50,9 @@ export async function handle(
         const r = applyAction(room, { action: "join", code, token: a.token, name: a.name }, now, timing, rng);
         if (!r.ok) return err(r.error);
         room.seen[a.token] = now;
+        const g0 = load(room);
+        g0.updateSettings({ roomName: `${g0.players[0].name}'s game` });
+        room.game = g0.toJSON();
         await store.set(code, room);
         return { ok: true, code, view: buildView(room, a.token, now) };
       } finally {
@@ -59,6 +87,7 @@ export async function handle(
     if (result.ok) {
       heartbeat(room, token, now);
       if (a.action === "join" && token) room.seen[token] = now;
+      await syncIndex(store, room);
       await store.set(code, room);
       return { ok: true, code, view: buildView(room, token, now) };
     }

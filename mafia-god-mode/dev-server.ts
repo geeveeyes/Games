@@ -1,6 +1,6 @@
 // Local API server (in-memory rooms). Vite proxies /api to it.
 import { createServer } from "node:http";
-import { handle } from "./shared/handler";
+import { handle, handleRooms } from "./shared/handler";
 import { DEFAULT_TIMING, type Timing } from "./shared/room";
 import { defaultStore } from "./shared/store";
 
@@ -18,6 +18,10 @@ createServer(async (req, res) => {
   for await (const chunk of req) body += chunk;
   try {
     const parsed = JSON.parse(body);
+    if (parsed.action === "rooms") {
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify(await handleRooms(defaultStore())));
+      return;
+    }
     const out = await handle(parsed, defaultStore(), Date.now(), timing);
     if (process.env.MGM_LOG && parsed.action !== "poll" && parsed.action !== "watch") console.log(parsed.action, parsed.token?.slice(0, 4), parsed.target ?? "", out.ok ? "ok" : out.error);
     res.writeHead(out.ok ? 200 : (out.status ?? 400), { "Content-Type": "application/json", "Cache-Control": "no-store" });

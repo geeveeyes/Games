@@ -1,12 +1,13 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { handle } from "../shared/handler";
+import { handle, handleRooms } from "../shared/handler";
 import { INSTANT_TIMING } from "../shared/room";
 import { RedisStore } from "../shared/store";
 
 // Tiny stand-in for Upstash's REST API: POST a JSON command array, get {result}.
 const data = new Map<string, string>();
+const sets = new Map<string, Set<string>>();
 let server: ReturnType<typeof createServer>;
 let url = "";
 
@@ -16,8 +17,13 @@ beforeAll(async () => {
     for await (const c of req) body += c;
     if (req.headers.authorization !== "Bearer secret") return void res.writeHead(401).end("{}");
     const [cmd, key, val, ...rest] = JSON.parse(body) as string[];
+    const args = JSON.parse(body) as string[];
     let result: unknown = null;
     if (cmd === "GET") result = data.get(key) ?? null;
+    else if (cmd === "SADD") (sets.get(key) ?? sets.set(key, new Set()).get(key)!).add(val), (result = 1);
+    else if (cmd === "SREM") result = sets.get(key)?.delete(val) ? 1 : 0;
+    else if (cmd === "SMEMBERS") result = [...(sets.get(key) ?? [])];
+    else if (cmd === "MGET") result = args.slice(1).map((k) => data.get(k) ?? null);
     else if (cmd === "DEL") result = data.delete(key) ? 1 : 0;
     else if (cmd === "SET") {
       if (rest.includes("NX") && data.has(key)) result = null;
@@ -44,6 +50,18 @@ describe("RedisStore over the REST protocol", () => {
     expect(s.ok).toBe(true);
     expect([...data.keys()].some((k) => k.startsWith("mgm:lock:"))).toBe(false); // locks released
   });
+  it("lists open rooms through Redis sets", async () => {
+    const store = new RedisStore(url, "secret");
+    const call = (a: any) => handle(a, store, 2_000, INSTANT_TIMING);
+    const c = await call({ action: "create", token: "h2", name: "Asha" });
+    if (!c.ok) throw new Error(c.error);
+    await call({ action: "settings", code: c.code, token: "h2", patch: { visibility: "open" } });
+    const rooms = (await handleRooms(store)).rooms;
+    expect(rooms.map((r) => r.code)).toContain(c.code);
+    await call({ action: "settings", code: c.code, token: "h2", patch: { visibility: "private" } });
+    expect((await handleRooms(store)).rooms.map((r) => r.code)).not.toContain(c.code);
+  });
+
   it("reports a bad token as an error, not a crash", async () => {
     const store = new RedisStore(url, "wrong");
     await expect(store.get("ABCD")).rejects.toThrow();

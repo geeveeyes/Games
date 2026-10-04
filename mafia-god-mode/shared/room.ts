@@ -53,6 +53,7 @@ export interface RoomData {
   seen: Record<string, number>; // playerId -> last heartbeat (ms)
   bots?: BotMem;
   botNext?: number | null; // earliest time a bot wants to act
+  listed?: boolean; // currently in the open-rooms directory
   updatedAt: number;
 }
 
@@ -180,7 +181,10 @@ export type Action =
   | { action: "leave"; code: string; token: string }
   | { action: "addBot"; code: string; token: string; count?: number }
   | { action: "removeBot"; code: string; token: string; target: string }
-  | { action: "say"; code: string; token: string; text: string };
+  | { action: "say"; code: string; token: string; text: string }
+  | { action: "admit"; code: string; token: string; target: string }
+  | { action: "decline"; code: string; token: string; target: string }
+  | { action: "kick"; code: string; token: string; target: string };
 
 export type ApiResponse =
   | { ok: true; code: string; view: ClientView }
@@ -211,7 +215,17 @@ export function applyAction(room: RoomData, a: Action, now: number, t: Timing, r
   const token: string = ("token" in a && a.token) || "";
   switch (a.action) {
     case "join":
-      r = g.addPlayer(a.token, a.name);
+      // In an "ask to join" room, everyone after the host has to be let in.
+      r = g.settings.visibility === "ask" && g.players.length > 0 && !g.player(a.token) ? g.requestJoin(a.token, a.name) : g.addPlayer(a.token, a.name);
+      break;
+    case "admit":
+      r = hostOnly(g, token) ?? g.admit(a.target);
+      break;
+    case "decline":
+      r = hostOnly(g, token) ?? g.decline(a.target);
+      break;
+    case "kick":
+      r = hostOnly(g, token) ?? g.kick(a.target);
       break;
     case "settings":
       r = hostOnly(g, token) ?? g.updateSettings(a.patch as never);
@@ -275,4 +289,35 @@ export function heartbeat(room: RoomData, id: string | undefined, now: number): 
   if (!id || !room.seen || now - (room.seen[id] ?? 0) < HEARTBEAT_MS) return false;
   room.seen[id] = now;
   return true;
+}
+
+// ---------- room directory ----------
+export interface RoomSummary {
+  code: string;
+  name: string;
+  host: string;
+  players: number;
+  max: number;
+  mode: string;
+  visibility: "open" | "ask";
+}
+
+/** Rooms that belong in the directory: lobby phase and not private. */
+export function isListed(g: Game): boolean {
+  return g.phase === "lobby" && g.settings.visibility !== "private" && g.players.some((p) => !p.bot);
+}
+
+export function summarize(room: RoomData): RoomSummary | null {
+  const g = load(room);
+  if (!isListed(g)) return null;
+  const host = g.player(g.hostId)?.name ?? "Host";
+  return {
+    code: room.code,
+    name: g.settings.roomName || `${host}'s game`,
+    host,
+    players: g.players.length,
+    max: 20,
+    mode: g.settings.mode,
+    visibility: g.settings.visibility as "open" | "ask",
+  };
 }

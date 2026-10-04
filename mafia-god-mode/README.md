@@ -21,6 +21,16 @@ Host settings: Doctor on/off, Detective on/off, Doctor self-save (default on), s
 
 Night order: Mafia, Doctor, Detective. If a night role is dead, the app still waits a random few seconds so nobody can tell. Mafia must agree on one victim. Players never learn who the Doctor saved.
 
+## Rooms and joining
+
+The host chooses who can join in the lobby, much like a Discord or Slack channel:
+
+- **Private** (default): not listed; people need the 4-letter code.
+- **Open**: listed under **Open rooms** on the home screen with one-tap **Join** and **Watch**.
+- **Ask to join**: listed, and the host taps **Let in** or **Decline** for each person.
+
+The host can name the room, and can remove anyone from the lobby (a removed person cannot rejoin that room). Rooms leave the list when the game starts, when set to Private, or when they expire. The directory is a Redis set (`mgm:open`) next to the room documents; stale entries clean themselves up when the list is read. Because anyone on the internet can see open rooms, keep rooms Private unless you want visitors.
+
 ## Bots
 
 The host can add bots in the lobby (**Add a bot**, **Fill to 6 players**, × to remove). Bots take real roles and play by the same rules as people:

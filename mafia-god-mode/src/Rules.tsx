@@ -57,6 +57,11 @@ export function RulesModal({ onClose }: { onClose: () => void }) {
           </section>
 
           <section className="stack">
+            <h3>Joining a game</h3>
+            <p>Enter a room code, or pick a room from the <b>Open rooms</b> list on the home screen. The host chooses who can join: <b>Private</b> (code only, not listed), <b>Open</b> (listed, one tap to join), or <b>Ask to join</b> (listed, the host approves each person). The host can also remove anyone from the lobby. Rooms leave the list once the game starts.</p>
+          </section>
+
+          <section className="stack">
             <h3>Playing with bots</h3>
             <p>If you are short on players, the host can add bots in the lobby. Bots take real roles, act at night, talk at the table and vote like anyone else, and they are always labelled “bot”. Mention a bot by name in the table-talk box and it will answer.</p>
           </section>

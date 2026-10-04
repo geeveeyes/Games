@@ -5,12 +5,17 @@ export interface Store {
   get(code: string): Promise<RoomData | null>;
   set(code: string, room: RoomData): Promise<void>;
   lock(code: string): Promise<() => Promise<void>>;
+  /** Directory of listed rooms (visibility open or ask, still in the lobby). */
+  index(code: string, listed: boolean): Promise<void>;
+  openCodes(): Promise<string[]>;
+  getMany(codes: string[]): Promise<(RoomData | null)[]>;
 }
 
 const TTL_SEC = 60 * 60 * 8;
 
 export class MemoryStore implements Store {
   private rooms = new Map<string, string>();
+  private listed = new Set<string>();
   private chains = new Map<string, Promise<void>>();
   async get(code: string) {
     const raw = this.rooms.get(code);
@@ -18,6 +23,16 @@ export class MemoryStore implements Store {
   }
   async set(code: string, room: RoomData) {
     this.rooms.set(code, JSON.stringify(room));
+  }
+  async index(code: string, listed: boolean) {
+    if (listed) this.listed.add(code);
+    else this.listed.delete(code);
+  }
+  async openCodes() {
+    return [...this.listed];
+  }
+  async getMany(codes: string[]) {
+    return Promise.all(codes.map((c) => this.get(c)));
   }
   async lock(code: string) {
     const prev = this.chains.get(code) ?? Promise.resolve();
@@ -46,6 +61,17 @@ export class RedisStore implements Store {
   }
   async set(code: string, room: RoomData) {
     await this.cmd("SET", `mgm:room:${code}`, JSON.stringify(room), "EX", TTL_SEC);
+  }
+  async index(code: string, listed: boolean) {
+    await this.cmd(listed ? "SADD" : "SREM", "mgm:open", code);
+  }
+  async openCodes() {
+    return (await this.cmd<string[]>("SMEMBERS", "mgm:open")) ?? [];
+  }
+  async getMany(codes: string[]) {
+    if (!codes.length) return [];
+    const raws = await this.cmd<(string | null)[]>("MGET", ...codes.map((c) => `mgm:room:${c}`));
+    return raws.map((r) => (r ? (JSON.parse(r) as RoomData) : null));
   }
   async lock(code: string) {
     const key = `mgm:lock:${code}`;
