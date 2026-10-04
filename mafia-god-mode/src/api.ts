@@ -79,14 +79,18 @@ export function useRoom(session: Session | null, onGone: () => void) {
   const busy = useRef(false);
   const phase = useRef("lobby");
 
-  const apply = useCallback((r: ApiResponse) => {
+  // An error from the player's own tap stays on screen for a few seconds. Without this the next
+  // background refresh would wipe it before anyone could read it.
+  const stickyUntil = useRef(0);
+  const apply = useCallback((r: ApiResponse, fromTap = false) => {
     if (r.ok) {
       skew.current = r.view.now - Date.now();
       phase.current = r.view.phase;
       setView(r.view);
-      setError(null);
+      if (Date.now() > stickyUntil.current) setError(null);
       return true;
     }
+    if (fromTap) stickyUntil.current = Date.now() + 6000;
     setError(r.error);
     if (r.status === 404) onGone();
     return false;
@@ -120,7 +124,7 @@ export function useRoom(session: Session | null, onGone: () => void) {
       if (!session) return false;
       busy.current = true;
       try {
-        return apply(await call({ ...a, code: session.code, token } as Action));
+        return apply(await call({ ...a, code: session.code, token } as Action), true);
       } finally {
         busy.current = false;
       }

@@ -46,6 +46,35 @@ export const DEFAULT_SETTINGS: Settings = {
   roomName: "",
 };
 
+const clampN = (n: number, lo: number, hi: number, fallback: number) => (Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : fallback);
+
+/**
+ * Complete, valid settings from anything: missing fields take defaults (rooms saved by older versions),
+ * invalid values fall back to defaults, unknown fields are dropped. Never throws.
+ */
+export function normalizeSettings(input: Partial<Record<keyof Settings, unknown>> | undefined | null): Settings {
+  const d = DEFAULT_SETTINGS;
+  const raw = (input ?? {}) as Record<string, unknown>;
+  const oneOf = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T => (allowed.includes(v as T) ? (v as T) : fallback);
+  const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
+  return {
+    mode: oneOf(raw.mode, ["table", "phones", "remote"], d.mode),
+    doctorSelfSave: bool(raw.doctorSelfSave, d.doctorSelfSave),
+    doctorRepeatSave: bool(raw.doctorRepeatSave, d.doctorRepeatSave),
+    useDoctor: bool(raw.useDoctor, d.useDoctor),
+    useDetective: bool(raw.useDetective, d.useDetective),
+    mafiaCount: raw.mafiaCount == null ? null : clampN(Number(raw.mafiaCount), 1, 9, 1),
+    revealRoleOnDeath: bool(raw.revealRoleOnDeath, d.revealRoleOnDeath),
+    deadSeeRoles: bool(raw.deadSeeRoles, d.deadSeeRoles),
+    dayTimerSec: clampN(Number(raw.dayTimerSec ?? d.dayTimerSec), 30, 900, d.dayTimerSec),
+    voteTimerSec: clampN(Number(raw.voteTimerSec ?? d.voteTimerSec), 15, 300, d.voteTimerSec),
+    voteStyle: oneOf(raw.voteStyle, ["trial", "quick"], d.voteStyle),
+    defenseSec: clampN(Number(raw.defenseSec ?? d.defenseSec), 15, 120, d.defenseSec),
+    visibility: oneOf(raw.visibility, ["open", "ask", "private"], d.visibility),
+    roomName: String(raw.roomName ?? d.roomName).replace(/\s+/g, " ").trim().slice(0, 30),
+  };
+}
+
 export const MIN_PLAYERS = 4;
 export const MAX_PLAYERS = 20;
 
@@ -153,8 +182,18 @@ export class Game {
   seq = 0;
   constructor(private rng: Rng = Math.random) {}
 
+  /** Load a saved game. Rooms outlive deploys, so anything saved by older code is upgraded to the current shape. */
   static fromJSON(data: unknown, rng: Rng = Math.random): Game {
-    return Object.assign(new Game(rng), structuredClone(data));
+    const g = Object.assign(new Game(rng), structuredClone(data));
+    g.settings = normalizeSettings(g.settings);
+    for (const k of ["players", "lines", "talk", "pending", "declined", "blocked", "defendants", "steps"] as const) {
+      if (!Array.isArray(g[k])) (g as unknown as Record<string, unknown>)[k] = [];
+    }
+    for (const k of ["notes", "votes", "mafiaPicks"] as const) {
+      if (!g[k] || typeof g[k] !== "object") (g as unknown as Record<string, unknown>)[k] = {};
+    }
+    if (g.voteStage !== "poll" && g.voteStage !== "final") g.voteStage = "final";
+    return g;
   }
   toJSON() {
     const { rng: _rng, ...state } = this as unknown as Record<string, unknown>;
@@ -286,19 +325,13 @@ export class Game {
 
   updateSettings(patch: Partial<Settings>): Result {
     if (this.phase !== "lobby") return fail("Settings are locked once the game starts.");
-    const s = { ...this.settings, ...patch };
-    if (!["table", "phones", "remote"].includes(s.mode)) return fail("Unknown mode.");
-    s.dayTimerSec = clamp(Math.round(Number(s.dayTimerSec)), 30, 900);
-    s.voteTimerSec = clamp(Math.round(Number(s.voteTimerSec)), 15, 300);
-    s.defenseSec = clamp(Math.round(Number(s.defenseSec)), 15, 120);
-    if (!(["trial", "quick"] as const).includes(s.voteStyle)) return fail("Unknown voting style.");
-    if (!(["open", "ask", "private"] as const).includes(s.visibility)) return fail("Unknown room visibility.");
-    s.roomName = String(s.roomName ?? "").replace(/\s+/g, " ").trim().slice(0, 30);
-    s.mafiaCount = s.mafiaCount == null ? null : clamp(Math.round(Number(s.mafiaCount)), 1, 9);
-    for (const k of ["doctorSelfSave", "doctorRepeatSave", "useDoctor", "useDetective", "revealRoleOnDeath", "deadSeeRoles"] as const) {
-      s[k] = Boolean(s[k]);
-    }
-    this.settings = s;
+    // Reject clearly invalid choices in the patch; everything else is normalized, so a room saved by an
+    // older version (missing newer fields) can still change any setting.
+    const bad = <T extends string>(v: unknown, allowed: readonly T[]) => v !== undefined && !allowed.includes(v as T);
+    if (bad(patch.mode, ["table", "phones", "remote"])) return fail("Unknown mode.");
+    if (bad(patch.voteStyle, ["trial", "quick"])) return fail("Unknown voting style.");
+    if (bad(patch.visibility, ["open", "ask", "private"])) return fail("Unknown room visibility.");
+    this.settings = normalizeSettings({ ...this.settings, ...patch });
     return ok();
   }
 

@@ -42,6 +42,29 @@ var DEFAULT_SETTINGS = {
   visibility: "private",
   roomName: ""
 };
+var clampN = (n, lo, hi, fallback) => Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : fallback;
+function normalizeSettings(input) {
+  const d = DEFAULT_SETTINGS;
+  const raw = input ?? {};
+  const oneOf = (v, allowed, fallback) => allowed.includes(v) ? v : fallback;
+  const bool = (v, fallback) => typeof v === "boolean" ? v : fallback;
+  return {
+    mode: oneOf(raw.mode, ["table", "phones", "remote"], d.mode),
+    doctorSelfSave: bool(raw.doctorSelfSave, d.doctorSelfSave),
+    doctorRepeatSave: bool(raw.doctorRepeatSave, d.doctorRepeatSave),
+    useDoctor: bool(raw.useDoctor, d.useDoctor),
+    useDetective: bool(raw.useDetective, d.useDetective),
+    mafiaCount: raw.mafiaCount == null ? null : clampN(Number(raw.mafiaCount), 1, 9, 1),
+    revealRoleOnDeath: bool(raw.revealRoleOnDeath, d.revealRoleOnDeath),
+    deadSeeRoles: bool(raw.deadSeeRoles, d.deadSeeRoles),
+    dayTimerSec: clampN(Number(raw.dayTimerSec ?? d.dayTimerSec), 30, 900, d.dayTimerSec),
+    voteTimerSec: clampN(Number(raw.voteTimerSec ?? d.voteTimerSec), 15, 300, d.voteTimerSec),
+    voteStyle: oneOf(raw.voteStyle, ["trial", "quick"], d.voteStyle),
+    defenseSec: clampN(Number(raw.defenseSec ?? d.defenseSec), 15, 120, d.defenseSec),
+    visibility: oneOf(raw.visibility, ["open", "ask", "private"], d.visibility),
+    roomName: String(raw.roomName ?? d.roomName).replace(/\s+/g, " ").trim().slice(0, 30)
+  };
+}
 var MIN_PLAYERS = 4;
 var MAX_PLAYERS = 20;
 var BOT_NAMES = [
@@ -120,8 +143,18 @@ var Game = class _Game {
   lastResult = null;
   lastNightDeathId = null;
   seq = 0;
+  /** Load a saved game. Rooms outlive deploys, so anything saved by older code is upgraded to the current shape. */
   static fromJSON(data, rng = Math.random) {
-    return Object.assign(new _Game(rng), structuredClone(data));
+    const g = Object.assign(new _Game(rng), structuredClone(data));
+    g.settings = normalizeSettings(g.settings);
+    for (const k of ["players", "lines", "talk", "pending", "declined", "blocked", "defendants", "steps"]) {
+      if (!Array.isArray(g[k])) g[k] = [];
+    }
+    for (const k of ["notes", "votes", "mafiaPicks"]) {
+      if (!g[k] || typeof g[k] !== "object") g[k] = {};
+    }
+    if (g.voteStage !== "poll" && g.voteStage !== "final") g.voteStage = "final";
+    return g;
   }
   toJSON() {
     const { rng: _rng, ...state } = this;
@@ -248,19 +281,11 @@ var Game = class _Game {
   }
   updateSettings(patch) {
     if (this.phase !== "lobby") return fail("Settings are locked once the game starts.");
-    const s = { ...this.settings, ...patch };
-    if (!["table", "phones", "remote"].includes(s.mode)) return fail("Unknown mode.");
-    s.dayTimerSec = clamp(Math.round(Number(s.dayTimerSec)), 30, 900);
-    s.voteTimerSec = clamp(Math.round(Number(s.voteTimerSec)), 15, 300);
-    s.defenseSec = clamp(Math.round(Number(s.defenseSec)), 15, 120);
-    if (!["trial", "quick"].includes(s.voteStyle)) return fail("Unknown voting style.");
-    if (!["open", "ask", "private"].includes(s.visibility)) return fail("Unknown room visibility.");
-    s.roomName = String(s.roomName ?? "").replace(/\s+/g, " ").trim().slice(0, 30);
-    s.mafiaCount = s.mafiaCount == null ? null : clamp(Math.round(Number(s.mafiaCount)), 1, 9);
-    for (const k of ["doctorSelfSave", "doctorRepeatSave", "useDoctor", "useDetective", "revealRoleOnDeath", "deadSeeRoles"]) {
-      s[k] = Boolean(s[k]);
-    }
-    this.settings = s;
+    const bad = (v, allowed) => v !== void 0 && !allowed.includes(v);
+    if (bad(patch.mode, ["table", "phones", "remote"])) return fail("Unknown mode.");
+    if (bad(patch.voteStyle, ["trial", "quick"])) return fail("Unknown voting style.");
+    if (bad(patch.visibility, ["open", "ask", "private"])) return fail("Unknown room visibility.");
+    this.settings = normalizeSettings({ ...this.settings, ...patch });
     return ok();
   }
   start() {
@@ -646,9 +671,6 @@ var Game = class _Game {
     };
   }
 };
-function clamp(n, lo, hi) {
-  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : lo;
-}
 function spoken(sec) {
   if (sec < 60) return `${sec} seconds`;
   const m = Math.round(sec / 60);

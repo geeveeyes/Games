@@ -12,6 +12,8 @@ const newPage = async () => {
   page.on("pageerror", (e) => { console.error("PAGE ERROR", e.message); process.exitCode = 1; });
   return page;
 };
+const ROOM = `Family night ${Math.random().toString(36).slice(2, 6)}`; // unique, so other rooms on the server never interfere
+const card = (page) => page.locator(".roomcard", { hasText: ROOM });
 const [host, guest, asker] = [await newPage(), await newPage(), await newPage()];
 
 await host.goto(BASE);
@@ -19,20 +21,22 @@ await host.fill("#name", "Venkat");
 await host.click("text=Create a game");
 await host.waitForSelector("text=Who can join");
 
-// Private by default: nothing is listed.
+// Private by default: our room is not listed.
 await guest.goto(BASE);
-await guest.waitForSelector("text=No open rooms right now");
+await guest.waitForSelector("text=Open rooms");
+await guest.waitForTimeout(5500); // longer than one directory refresh
+if (await card(guest).count()) { console.error("FAIL: a private room was listed"); process.exitCode = 1; }
 
 // Open the room and give it a name.
-await host.fill("#roomname", "Family night");
+await host.fill("#roomname", ROOM);
 await host.click("label.opt:has-text('Open')");
 await host.locator("#roomname").blur();
 
 // The guest sees it and joins with one tap.
 await guest.fill("#name", "Meena");
-await guest.waitForSelector("text=Family night", { timeout: 15000 });
+await card(guest).waitFor({ timeout: 15000 });
 await guest.screenshot({ path: `${shots}/home-open-rooms.png`, fullPage: true });
-await guest.click(".roomcard button:has-text('Join')");
+await card(guest).locator("button:has-text('Join')").click();
 await guest.waitForSelector("text=Players (2)");
 await host.waitForSelector("text=Players (2)");
 console.log("one-tap join works");
@@ -41,8 +45,8 @@ console.log("one-tap join works");
 await host.click("label.opt:has-text('Ask to join')");
 await asker.goto(BASE);
 await asker.fill("#name", "Arun");
-await asker.waitForSelector("text=Ask to join", { timeout: 15000 });
-await asker.click(".roomcard button:has-text('Ask to join')");
+await card(asker).locator("button:has-text('Ask to join')").waitFor({ timeout: 15000 });
+await card(asker).locator("button:has-text('Ask to join')").click();
 await asker.waitForSelector("text=Waiting for Venkat to let you in");
 await asker.screenshot({ path: `${shots}/waiting.png` });
 await host.waitForSelector("text=Wants to join", { timeout: 15000 });

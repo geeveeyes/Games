@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { Mode, Role, Settings, Visibility, VoteStyle } from "../shared/game";
+import { DAY_SECONDS, DEFENSE_SECONDS, MAFIA_COUNTS, MODE_IDS, VISIBILITY_IDS, VOTE_SECONDS, VOTE_STYLE_IDS } from "../shared/options";
 import type { ClientView, RoomSummary } from "../shared/room";
 import { call, callRooms, loadSession, playerToken, saveName, saveSession, savedName, useRoom, type Session } from "./api";
 import { keepAwake, plain, useNarrator } from "./narrator";
@@ -532,11 +533,21 @@ function Roster({ players, showRoles, onRemove, hostId }: { players: Player[]; s
 }
 
 // ---------- Lobby ----------
-const MODES: { id: Mode; title: string; text: string }[] = [
-  { id: "table", title: "In person with a TV or laptop", text: "Narration on a shared screen. Eyes closed at night." },
-  { id: "phones", title: "In person, phones only", text: "The host's phone is the narrator. Eyes closed at night." },
-  { id: "remote", title: "Remote on a video call", text: "No eyes-closed step. Phones act privately." },
-];
+const MODE_TEXT: Record<Mode, { title: string; text: string }> = {
+  table: { title: "In person with a TV or laptop", text: "Narration on a shared screen. Eyes closed at night." },
+  phones: { title: "In person, phones only", text: "The host's phone is the narrator. Eyes closed at night." },
+  remote: { title: "Remote on a video call", text: "No eyes-closed step. Phones act privately." },
+};
+const MODES = MODE_IDS.map((id) => ({ id, ...MODE_TEXT[id] }));
+const VOTE_TEXT: Record<VoteStyle, { title: string; text: string }> = {
+  trial: { title: "Trial vote", text: "First vote, defenses from the top accused, then a final vote." },
+  quick: { title: "Quick vote", text: "One vote and the top player is eliminated." },
+};
+const VISIBILITY_TEXT: Record<Visibility, { title: string; text: string }> = {
+  private: { title: "Private", text: "Not listed. People need the room code." },
+  open: { title: "Open", text: "Listed on the home screen. Anyone can join with one tap." },
+  ask: { title: "Ask to join", text: "Listed, but you approve each person." },
+};
 
 function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => void }) {
   const host = !!v.you?.isHost;
@@ -593,11 +604,7 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
       <section className="stack">
         <h3>Who can join</h3>
         <div className="stack">
-          {([
-            ["private", "Private", "Not listed. People need the room code."],
-            ["open", "Open", "Listed on the home screen. Anyone can join with one tap."],
-            ["ask", "Ask to join", "Listed, but you approve each person."],
-          ] as [Visibility, string, string][]).map(([id, title, text]) => (
+          {VISIBILITY_IDS.map((id) => ({ id, ...VISIBILITY_TEXT[id] })).map(({ id, title, text }) => (
             <label key={id} className={`opt ${s.visibility === id ? "sel" : ""}`}>
               <input type="radio" name="vis" checked={s.visibility === id} disabled={!host} onChange={() => set({ visibility: id })} />
               <span><b>{title}</b><small>{text}</small></span>
@@ -621,10 +628,7 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
           <b>{sg.mafia} Mafia</b><b>{sg.doctor} Doctor</b><b>{sg.detective} Detective</b><b>{sg.villager} Villager{sg.villager === 1 ? "" : "s"}</b>
         </div>
         <div className="stack">
-          {([
-            ["trial", "Trial vote", "First vote, defenses from the top accused, then a final vote."],
-            ["quick", "Quick vote", "One vote and the top player is eliminated."],
-          ] as [VoteStyle, string, string][]).map(([id, title, text]) => (
+          {VOTE_STYLE_IDS.map((id) => ({ id, ...VOTE_TEXT[id] })).map(({ id, title, text }) => (
             <label key={id} className={`opt ${s.voteStyle === id ? "sel" : ""}`}>
               <input type="radio" name="vstyle" checked={s.voteStyle === id} disabled={!host} onChange={() => set({ voteStyle: id })} />
               <span><b>{title}</b><small>{text}</small></span>
@@ -641,24 +645,24 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
           <label className="field"><span>Mafia count</span>
             <select id="mafia" value={s.mafiaCount ?? "auto"} disabled={!host} onChange={(e) => set({ mafiaCount: e.target.value === "auto" ? null : Number(e.target.value) })}>
               <option value="auto">Automatic</option>
-              {[1, 2, 3, 4, 5].map((k) => <option key={k} value={k}>{k}</option>)}
+              {MAFIA_COUNTS.filter((k): k is number => k !== null).map((k) => <option key={k} value={k}>{k}</option>)}
             </select>
           </label>
           <label className="field"><span>Discussion</span>
             <select id="day" value={s.dayTimerSec} disabled={!host} onChange={(e) => set({ dayTimerSec: Number(e.target.value) })}>
-              {[60, 120, 180, 300, 600].map((k) => <option key={k} value={k}>{k / 60} min</option>)}
+              {DAY_SECONDS.map((k) => <option key={k} value={k}>{k / 60} min</option>)}
             </select>
           </label>
           {s.voteStyle === "trial" && (
             <label className="field"><span>Defense</span>
               <select id="defense" value={s.defenseSec} disabled={!host} onChange={(e) => set({ defenseSec: Number(e.target.value) })}>
-                {[20, 30, 45, 60].map((k) => <option key={k} value={k}>{k} sec</option>)}
+                {DEFENSE_SECONDS.map((k) => <option key={k} value={k}>{k} sec</option>)}
               </select>
             </label>
           )}
           <label className="field"><span>Voting</span>
             <select id="vote" value={s.voteTimerSec} disabled={!host} onChange={(e) => set({ voteTimerSec: Number(e.target.value) })}>
-              {[30, 60, 90, 120].map((k) => <option key={k} value={k}>{k} sec</option>)}
+              {VOTE_SECONDS.map((k) => <option key={k} value={k}>{k} sec</option>)}
             </select>
           </label>
         </div>
