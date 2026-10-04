@@ -1,0 +1,504 @@
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import type { Mode, Role, Settings } from "../shared/game";
+import type { ClientView } from "../shared/room";
+import { call, loadSession, playerToken, saveName, saveSession, savedName, useRoom, type Session } from "./api";
+import { keepAwake, useNarrator } from "./narrator";
+
+type Act = (a: Record<string, unknown>) => Promise<boolean>;
+type Player = ClientView["players"][number];
+
+const ROLE_INFO: Record<Role, { title: string; tip: string; team: "Mafia" | "Town" }> = {
+  mafia: { title: "Mafia", tip: "Each night, agree with your partners on one person to eliminate. By day, blend in.", team: "Mafia" },
+  doctor: { title: "Doctor", tip: "Each night, pick one person to protect. You may protect yourself.", team: "Town" },
+  detective: { title: "Detective", tip: "Each night, learn whether one person is Mafia. Use it wisely.", team: "Town" },
+  villager: { title: "Villager", tip: "No night power. Talk, reason, and vote out the Mafia.", team: "Town" },
+};
+
+export function App() {
+  const [session, setSession] = useState<Session | null>(loadSession);
+  const leave = useCallback(() => {
+    saveSession(null);
+    setSession(null);
+  }, []);
+  const room = useRoom(session, leave);
+  const narrator = useNarrator(room.view, session?.mode === "watch");
+
+  useEffect(() => {
+    if (session) keepAwake();
+  }, [session]);
+
+  const enter = (s: Session) => {
+    saveSession(s);
+    setSession(s);
+  };
+
+  if (!session || !room.view) {
+    return (
+      <Shell>
+        {session ? <p className="muted center">Connecting to room {session.code}…</p> : <Home onEnter={enter} />}
+        {session && room.error && (
+          <div className="stack">
+            <p className="error">{room.error}</p>
+            <button className="btn ghost" onClick={leave}>Back</button>
+          </div>
+        )}
+      </Shell>
+    );
+  }
+
+  const v = room.view;
+  const watch = session.mode === "watch";
+  return (
+    <Shell
+      code={v.code}
+      right={
+        narrator.supported && (
+          <button className={`chip ${narrator.on ? "on" : ""}`} onClick={narrator.toggle} aria-pressed={narrator.on}>
+            {narrator.on ? "Narrator on" : "Narrator off"}
+          </button>
+        )
+      }
+    >
+      {room.error && <p className="error" role="alert">{room.error}</p>}
+      {watch ? (
+        <Display v={v} now={room.now} narratorOn={narrator.on} toggle={narrator.toggle} />
+      ) : (
+        <PlayerScreen v={v} act={room.act} now={room.now} onLeave={leave} setError={room.setError} />
+      )}
+    </Shell>
+  );
+}
+
+function Shell({ children, code, right }: { children: ReactNode; code?: string; right?: ReactNode }) {
+  return (
+    <div className="app">
+      <header className="top">
+        <span className="brand">Mafia God Mode</span>
+        <span className="grow" />
+        {right}
+        {code && <span className="chip code-chip" aria-label={`Room code ${code}`}>{code}</span>}
+      </header>
+      <main className="main">{children}</main>
+    </div>
+  );
+}
+
+// ---------- Home ----------
+function Home({ onEnter }: { onEnter: (s: Session) => void }) {
+  const [name, setName] = useState(savedName());
+  const [code, setCode] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setErr("");
+    await fn();
+    setBusy(false);
+  };
+  const create = () =>
+    run(async () => {
+      saveName(name);
+      const r = await call({ action: "create", token: playerToken(), name });
+      r.ok ? onEnter({ code: r.code, mode: "player" }) : setErr(r.error);
+    });
+  const join = () =>
+    run(async () => {
+      saveName(name);
+      const c = code.trim().toUpperCase();
+      const r = await call({ action: "join", code: c, token: playerToken(), name });
+      r.ok ? onEnter({ code: r.code, mode: "player" }) : setErr(r.error);
+    });
+  const watch = () =>
+    run(async () => {
+      const c = code.trim().toUpperCase();
+      const r = await call({ action: "watch", code: c });
+      r.ok ? onEnter({ code: r.code, mode: "watch" }) : setErr(r.error);
+    });
+
+  return (
+    <div className="stack gap-lg">
+      <div className="stack">
+        <h1>Everyone plays.<br />Nobody narrates.</h1>
+        <p className="muted">The app deals roles, speaks the night script, and counts votes. Open this page on every phone.</p>
+      </div>
+      <label className="field">
+        <span>Your name</span>
+        <input id="name" value={name} maxLength={16} autoComplete="nickname" onChange={(e) => setName(e.target.value)} placeholder="e.g. Meena" />
+      </label>
+      <button className="btn" disabled={busy || !name.trim()} onClick={create}>Create a game</button>
+      <div className="divider"><span>or join one</span></div>
+      <label className="field">
+        <span>Room code</span>
+        <input id="code" className="codeinput" value={code} maxLength={4} autoCapitalize="characters" autoComplete="off" onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="KXRT" />
+      </label>
+      <div className="row2">
+        <button className="btn" disabled={busy || code.length !== 4 || !name.trim()} onClick={join}>Join game</button>
+        <button className="btn ghost" disabled={busy || code.length !== 4} onClick={watch}>Show on TV</button>
+      </div>
+      {err && <p className="error" role="alert">{err}</p>}
+    </div>
+  );
+}
+
+// ---------- shared bits ----------
+function Timer({ due, now, label }: { due: number | null; now: () => number; label?: string }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => tick((n) => n + 1), 250);
+    return () => clearInterval(id);
+  }, []);
+  if (due === null) return null;
+  const s = Math.max(0, Math.ceil((due - now()) / 1000));
+  return (
+    <div className="timer" aria-live="off">
+      {label && <span className="tag">{label}</span>}
+      {String(Math.floor(s / 60)).padStart(2, "0")}:{String(s % 60).padStart(2, "0")}
+    </div>
+  );
+}
+
+function Narration({ v }: { v: ClientView }) {
+  const line = v.lines.at(-1);
+  return line ? <p className="narration" aria-live="polite">{line.text}</p> : null;
+}
+
+function Pick({
+  players, allowed, selected, onPick, badges, disabled,
+}: {
+  players: Player[];
+  allowed: Set<string>;
+  selected: string | null;
+  onPick: (id: string) => void;
+  badges?: Record<string, string>;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="roster" role="listbox">
+      {players.map((p) => {
+        const can = allowed.has(p.id) && !disabled;
+        return (
+          <button
+            key={p.id}
+            role="option"
+            aria-selected={selected === p.id}
+            className={`prow ${selected === p.id ? "sel" : ""} ${!p.alive ? "dead" : ""}`}
+            disabled={!can}
+            onClick={() => onPick(p.id)}
+          >
+            <span className="av">{p.name[0]}</span>
+            <span>{p.name}</span>
+            {p.role && <span className="rtag">{ROLE_INFO[p.role].title}</span>}
+            {badges?.[p.id] && <span className="rtag hot">{badges[p.id]}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function RoleCard({ role, partners }: { role: Role; partners: string[] }) {
+  const [show, setShow] = useState(false);
+  const info = ROLE_INFO[role];
+  return (
+    <button
+      className={`card ${show ? `revealed ${role}` : ""}`}
+      onPointerDown={() => setShow(true)}
+      onPointerUp={() => setShow(false)}
+      onPointerLeave={() => setShow(false)}
+      onPointerCancel={() => setShow(false)}
+      onKeyDown={(e) => (e.key === " " || e.key === "Enter") && setShow((s) => !s)}
+      aria-label={show ? `Your role: ${info.title}` : "Hold to see your role"}
+    >
+      {show ? (
+        <>
+          <span className="tag">You are</span>
+          <span className="big">{info.title}</span>
+          <span className="cardtip">{info.tip}</span>
+          {partners.length > 0 && <span className="tag">Partner{partners.length > 1 ? "s" : ""}: {partners.join(", ")}</span>}
+        </>
+      ) : (
+        <>
+          <span className="big dim">?</span>
+          <span className="tag">Press and hold to see your role</span>
+        </>
+      )}
+    </button>
+  );
+}
+
+function HostSkip({ v, act, label }: { v: ClientView; act: Act; label: string }) {
+  return v.you?.isHost ? <button className="btn ghost" onClick={() => act({ action: "skip", phase: v.phase, round: v.round })}>{label}</button> : null;
+}
+
+// ---------- Player screens ----------
+function PlayerScreen({ v, act, now, onLeave, setError }: { v: ClientView; act: Act; now: () => number; onLeave: () => void; setError: (e: string | null) => void }) {
+  const me = v.you;
+  if (!me) {
+    return (
+      <div className="stack">
+        <p>You are not in this room.</p>
+        <button className="btn" onClick={onLeave}>Back</button>
+      </div>
+    );
+  }
+  const alive = v.players.filter((p) => p.alive);
+  const others = alive.filter((p) => p.id !== me.id);
+  const spectator = !me.alive && v.phase !== "lobby" && v.phase !== "over";
+  const partners = me.role === "mafia" ? v.players.filter((p) => p.role === "mafia" && p.id !== me.id).map((p) => p.name) : [];
+
+  const banner = spectator ? <p className="banner">You are out of the game. You can keep watching.</p> : null;
+
+  switch (v.phase) {
+    case "lobby":
+      return <Lobby v={v} act={act} onLeave={onLeave} />;
+
+    case "reveal": {
+      const waiting = v.players.filter((p) => !p.seenRole && p.connected).length;
+      return (
+        <div className="stack gap-lg">
+          <Narration v={v} />
+          {me.role && <RoleCard role={me.role} partners={partners} />}
+          {me.role === "mafia" && null}
+          {!v.players.find((p) => p.id === me.id)?.seenRole ? (
+            <button className="btn" onClick={() => act({ action: "ack" })}>I have seen my role</button>
+          ) : (
+            <p className="muted center">Waiting for {waiting} more player{waiting === 1 ? "" : "s"}…</p>
+          )}
+          <HostSkip v={v} act={act} label="Start the night now" />
+        </div>
+      );
+    }
+
+    case "night": {
+      const step = v.night.step;
+      const isMyTurn = me.alive && me.role === step;
+      const classic = v.settings.mode !== "remote";
+      if (isMyTurn && step) {
+        const allowed = new Set(v.night.yourTargets);
+        const list = step === "mafia" ? others.filter((p) => p.role !== "mafia") : step === "doctor" ? alive : others;
+        const lastNote = me.notes.at(-1);
+        const targetName = (id: string) => v.players.find((p) => p.id === id)?.name ?? "?";
+        const badges: Record<string, string> = {};
+        for (const [mid, t] of Object.entries(v.night.mafiaPicks)) if (mid !== me.id) badges[t] = `${targetName(mid)} picked`;
+        const title = { mafia: "Choose who to eliminate", doctor: "Choose who to save", detective: "Choose who to investigate" }[step];
+        return (
+          <div className="stack gap-lg night">
+            <Narration v={v} />
+            <div className="moon" aria-hidden />
+            <h2>{title}</h2>
+            {step === "detective" && v.night.yourPick && lastNote ? (
+              <div className={`card revealed ${lastNote.isMafia ? "mafia" : "detective"}`}>
+                <span className="tag">{targetName(lastNote.targetId)} is</span>
+                <span className="big">{lastNote.isMafia ? "Mafia" : "Innocent"}</span>
+                <span className="tag">Keep it to yourself</span>
+              </div>
+            ) : (
+              <>
+                {step === "mafia" && partners.length > 0 && <p className="muted">Partner{partners.length > 1 ? "s" : ""}: {partners.join(", ")}. Everyone must pick the same person.</p>}
+                <Pick players={list} allowed={allowed} selected={v.night.yourPick} onPick={(id) => act({ action: "night", target: id })} badges={badges} />
+                {v.night.yourPick && <p className="muted center">Locked in{step === "mafia" ? ". Waiting for your partners to match." : ". Waiting for the night to continue."}</p>}
+              </>
+            )}
+          </div>
+        );
+      }
+      return (
+        <div className="stack gap-lg center night sleep">
+          <Narration v={v} />
+          <div className="moon" aria-hidden />
+          <h2>{classic ? "Keep your eyes closed" : "Night"}</h2>
+          <p className="muted">{me.alive ? (classic ? "Do not peek. The narrator will tell you when it is morning." : "Night roles are acting. Wait for morning.") : "You are out of the game."}</p>
+        </div>
+      );
+    }
+
+    case "dawn":
+    case "result":
+      return (
+        <div className="stack gap-lg center">
+          {banner}
+          <div className={v.phase === "dawn" ? "sun" : "gavel"} aria-hidden />
+          <Narration v={v} />
+          <Timer due={v.due} now={now} label="Next" />
+          <HostSkip v={v} act={act} label="Continue" />
+        </div>
+      );
+
+    case "day":
+      return (
+        <div className="stack gap-lg">
+          {banner}
+          <div className="sun" aria-hidden />
+          <Narration v={v} />
+          <Timer due={v.due} now={now} label="Voting opens in" />
+          <Roster players={v.players} />
+          <HostSkip v={v} act={act} label="Start the vote now" />
+        </div>
+      );
+
+    case "vote": {
+      const mine = v.vote.yourVote;
+      const badges: Record<string, string> = {};
+      for (const [id, n] of Object.entries(v.vote.counts)) if (id !== "skip") badges[id] = `${n} vote${n === 1 ? "" : "s"}`;
+      return (
+        <div className="stack gap-lg">
+          {banner}
+          <Narration v={v} />
+          <Timer due={v.due} now={now} label="Vote ends" />
+          <Pick players={others} allowed={new Set(others.map((p) => p.id))} selected={mine} onPick={(id) => act({ action: "vote", target: id })} badges={badges} disabled={!me.alive} />
+          {me.alive && (
+            <button className={`btn ${mine === "skip" ? "" : "ghost"}`} onClick={() => act({ action: "vote", target: "skip" })}>
+              Skip vote{v.vote.counts.skip ? ` (${v.vote.counts.skip})` : ""}
+            </button>
+          )}
+          <p className="muted center">{v.vote.voted} of {v.vote.eligible} have voted</p>
+          <HostSkip v={v} act={act} label="Close the vote now" />
+        </div>
+      );
+    }
+
+    case "over":
+      return (
+        <div className="stack gap-lg">
+          <div className={`card revealed ${v.winner === "town" ? "detective" : "mafia"}`}>
+            <span className="tag">Winners</span>
+            <span className="big">{v.winner === "town" ? "Town" : "Mafia"}</span>
+            <span className="tag">{v.lines.at(-1)?.text}</span>
+          </div>
+          <Roster players={v.players} showRoles />
+          {me.isHost ? (
+            <button className="btn" onClick={() => act({ action: "rematch" })}>Play again</button>
+          ) : (
+            <p className="muted center">Waiting for the host to start another game.</p>
+          )}
+          <button className="btn ghost" onClick={onLeave}>Leave room</button>
+        </div>
+      );
+  }
+}
+
+function Roster({ players, showRoles }: { players: Player[]; showRoles?: boolean }) {
+  return (
+    <div className="roster">
+      {players.map((p) => (
+        <div key={p.id} className={`prow static ${!p.alive ? "dead" : ""}`}>
+          <span className="av">{p.name[0]}</span>
+          <span>{p.name}</span>
+          {(showRoles || p.role) && p.role && <span className="rtag">{ROLE_INFO[p.role].title}</span>}
+          {!p.alive && <span className="rtag">out</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------- Lobby ----------
+const MODES: { id: Mode; title: string; text: string }[] = [
+  { id: "table", title: "In person with a TV or laptop", text: "Narration on a shared screen. Eyes closed at night." },
+  { id: "phones", title: "In person, phones only", text: "The host's phone is the narrator. Eyes closed at night." },
+  { id: "remote", title: "Remote on a video call", text: "No eyes-closed step. Phones act privately." },
+];
+
+function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => void }) {
+  const host = !!v.you?.isHost;
+  const s = v.settings;
+  const set = (patch: Partial<Settings>) => act({ action: "settings", patch });
+  const n = v.players.length;
+  const enough = n >= v.minPlayers;
+  const sg = v.suggested;
+  const toggle = (key: keyof Settings, label: string, hint?: string) => (
+    <label className="check">
+      <input type="checkbox" checked={Boolean(s[key])} disabled={!host} onChange={(e) => set({ [key]: e.target.checked })} />
+      <span>{label}{hint && <small>{hint}</small>}</span>
+    </label>
+  );
+  return (
+    <div className="stack gap-lg">
+      <div className="stack">
+        <span className="tag">Room code</span>
+        <div className="bigcode">{v.code}</div>
+        <p className="muted">Friends open this site and enter the code. For a TV, choose "Show on TV" and enter it there.</p>
+      </div>
+      <section className="stack">
+        <h3>Players ({n})</h3>
+        <Roster players={v.players.map((p) => ({ ...p, role: null }))} />
+        {!enough && <p className="muted">Waiting for at least {v.minPlayers} players.</p>}
+      </section>
+      <section className="stack">
+        <h3>Game setup {host ? "" : "(host controls)"}</h3>
+        <div className="stack">
+          {MODES.map((m) => (
+            <label key={m.id} className={`opt ${s.mode === m.id ? "sel" : ""}`}>
+              <input type="radio" name="mode" checked={s.mode === m.id} disabled={!host} onChange={() => set({ mode: m.id })} />
+              <span><b>{m.title}</b><small>{m.text}</small></span>
+            </label>
+          ))}
+        </div>
+        <div className="mix">
+          <span>With {Math.max(n, v.minPlayers)} players:</span>
+          <b>{sg.mafia} Mafia</b><b>{sg.doctor} Doctor</b><b>{sg.detective} Detective</b><b>{sg.villager} Villager{sg.villager === 1 ? "" : "s"}</b>
+        </div>
+        {toggle("useDoctor", "Include the Doctor")}
+        {toggle("useDetective", "Include the Detective")}
+        {toggle("doctorSelfSave", "Doctor can save themselves")}
+        {toggle("doctorRepeatSave", "Doctor can save the same person two nights in a row")}
+        {toggle("revealRoleOnDeath", "Reveal a player's role when they die")}
+        {toggle("deadSeeRoles", "Dead players can see every role")}
+        <div className="row2">
+          <label className="field"><span>Mafia count</span>
+            <select id="mafia" value={s.mafiaCount ?? "auto"} disabled={!host} onChange={(e) => set({ mafiaCount: e.target.value === "auto" ? null : Number(e.target.value) })}>
+              <option value="auto">Automatic</option>
+              {[1, 2, 3, 4, 5].map((k) => <option key={k} value={k}>{k}</option>)}
+            </select>
+          </label>
+          <label className="field"><span>Discussion</span>
+            <select id="day" value={s.dayTimerSec} disabled={!host} onChange={(e) => set({ dayTimerSec: Number(e.target.value) })}>
+              {[60, 120, 180, 300, 600].map((k) => <option key={k} value={k}>{k / 60} min</option>)}
+            </select>
+          </label>
+          <label className="field"><span>Voting</span>
+            <select id="vote" value={s.voteTimerSec} disabled={!host} onChange={(e) => set({ voteTimerSec: Number(e.target.value) })}>
+              {[30, 60, 90, 120].map((k) => <option key={k} value={k}>{k} sec</option>)}
+            </select>
+          </label>
+        </div>
+      </section>
+      {host ? (
+        <button className="btn" disabled={!enough} onClick={() => act({ action: "start" })}>Start game</button>
+      ) : (
+        <p className="muted center">Waiting for the host to start…</p>
+      )}
+      <button className="btn ghost" onClick={async () => { await act({ action: "leave" }); onLeave(); }}>Leave room</button>
+    </div>
+  );
+}
+
+// ---------- Table / TV screen ----------
+function Display({ v, now, narratorOn, toggle }: { v: ClientView; now: () => number; narratorOn: boolean; toggle: () => void }) {
+  const line = v.lines.at(-1)?.text ?? "Waiting for players…";
+  const label: Record<string, string> = { lobby: "Lobby", reveal: "Roles", night: "Night", dawn: "Dawn", day: "Day", vote: "Vote", result: "Result", over: "Game over" };
+  const timed = ["day", "vote"].includes(v.phase);
+  return (
+    <div className={`tv-screen ${v.phase}`}>
+      <div className="tv-main">
+        <span className="tag">Round {v.round || "–"} · {label[v.phase]} · {v.players.filter((p) => p.alive).length} alive</span>
+        <p className="tv-say" aria-live="polite">{line}</p>
+        {timed && <Timer due={v.due} now={now} />}
+        {v.phase === "lobby" && (
+          <p className="muted">Open this site on your phone, choose "Join game" and enter <b className="mono">{v.code}</b>.</p>
+        )}
+        {v.phase === "over" && <p className="tv-say win">{v.winner === "town" ? "Town wins" : "Mafia wins"}</p>}
+        {!narratorOn && <button className="btn" onClick={toggle}>Turn on the narrator voice</button>}
+      </div>
+      <div className="seats">
+        {v.players.map((p) => (
+          <div key={p.id} className={`seat ${!p.alive ? "dead" : ""}`}>
+            <span>{p.name}</span>
+            {p.role && <small>{ROLE_INFO[p.role].title}</small>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
