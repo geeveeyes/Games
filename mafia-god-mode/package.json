@@ -8,6 +8,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "e2e": "MGM_FAST=1 node e2e/play.mjs",
+    "e2e:solo": "MGM_FAST=1 node e2e/solo.mjs",
     "build:api": "node scripts-bundle-api.mjs"
   },
   "dependencies": {

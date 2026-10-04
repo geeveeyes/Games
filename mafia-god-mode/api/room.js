@@ -42,6 +42,29 @@ var DEFAULT_SETTINGS = {
 };
 var MIN_PLAYERS = 4;
 var MAX_PLAYERS = 20;
+var BOT_NAMES = [
+  "Maya",
+  "Theo",
+  "Isla",
+  "Dev",
+  "Nora",
+  "Sam",
+  "Zoe",
+  "Kai",
+  "Lila",
+  "Omar",
+  "Ruby",
+  "Finn",
+  "Anika",
+  "Leo",
+  "June",
+  "Marco",
+  "Tess",
+  "Ali",
+  "Cleo",
+  "Jules"
+];
+var PERSONAS = ["warm", "blunt", "playful"];
 var ok = (value) => ({ ok: true, value });
 var fail = (error) => ({ ok: false, error });
 function roleCounts(n, s) {
@@ -73,6 +96,8 @@ var Game = class _Game {
   hostId = null;
   winner = null;
   lines = [];
+  talk = [];
+  talkSeq = 0;
   notes = {};
   // night
   steps = [];
@@ -136,14 +161,45 @@ var Game = class _Game {
   removePlayer(id) {
     if (this.phase !== "lobby") return fail("Players can only leave from the lobby.");
     this.players = this.players.filter((p) => p.id !== id);
-    if (this.hostId === id) this.hostId = this.players.find((p) => p.connected)?.id ?? this.players[0]?.id ?? null;
+    if (this.hostId === id) this.hostId = this.players.find((p) => p.connected && !p.bot)?.id ?? this.players.find((p) => !p.bot)?.id ?? null;
+    return ok();
+  }
+  addBot() {
+    if (this.phase !== "lobby") return fail("Bots can only join from the lobby.");
+    if (this.players.length >= MAX_PLAYERS) return fail("The room is full.");
+    const taken = new Set(this.players.map((p) => p.name.toLowerCase()));
+    const free = BOT_NAMES.filter((n) => !taken.has(n.toLowerCase()));
+    if (!free.length) return fail("No bot names left.");
+    const name = this.pick(free);
+    const bots = this.players.filter((p) => p.bot).length;
+    this.players.push({
+      id: `bot-${name.toLowerCase()}`,
+      name,
+      bot: true,
+      persona: PERSONAS[bots % PERSONAS.length],
+      role: null,
+      alive: true,
+      connected: true,
+      seenRole: false
+    });
+    return ok();
+  }
+  /** A line in the table-talk feed, from a person or a bot. */
+  say(playerId, text) {
+    const me = this.player(playerId);
+    if (!me?.alive) return fail("Only living players can talk.");
+    if (!["day", "vote", "defense", "dawn"].includes(this.phase)) return fail("Wait for the day to talk.");
+    const clean = text.replace(/\s+/g, " ").trim().slice(0, 140);
+    if (!clean) return fail("Type something to say.");
+    this.talk.push({ seq: ++this.talkSeq, id: me.id, name: me.name, text: clean, bot: !!me.bot });
+    if (this.talk.length > 40) this.talk.shift();
     return ok();
   }
   setConnected(id, connected) {
     const p = this.player(id);
     if (p) p.connected = connected;
     if (!connected && this.hostId === id) {
-      const next = this.players.find((q) => q.connected && q.id !== id);
+      const next = this.players.find((q) => q.connected && !q.bot && q.id !== id);
       if (next) this.hostId = next.id;
     }
   }
@@ -211,6 +267,7 @@ var Game = class _Game {
     this.doctorPick = null;
     this.detectivePick = null;
     this.votes = {};
+    this.talk = [];
     this.lastResult = null;
     this.narrate(
       this.classic() ? this.pick([
@@ -473,6 +530,7 @@ var Game = class _Game {
     this.winner = null;
     this.notes = {};
     this.lines = [];
+    this.talk = [];
     this.lastResult = null;
     this.defendants = [];
     this.defenseIdx = 0;
@@ -501,12 +559,14 @@ var Game = class _Game {
       hostId: this.hostId,
       winner: this.winner,
       lines: this.lines.slice(-12),
+      talk: this.talk.slice(-14),
       players: this.players.map((p) => ({
         id: p.id,
         name: p.name,
         alive: p.alive,
         connected: p.connected,
         seenRole: p.seenRole,
+        bot: !!p.bot,
         role: this.phase === "lobby" ? null : showRole(p) ? p.role : null
       })),
       you: me ? {
@@ -551,6 +611,186 @@ function article(role) {
   return role === "mafia" ? "a Mafia member" : role === "villager" ? "a Villager" : `the ${role[0].toUpperCase()}${role.slice(1)}`;
 }
 
+// shared/bots.ts
+var pickOf = (xs, rng) => xs[Math.floor(rng() * xs.length)];
+var LINES = {
+  warm: {
+    accuse: ["I don't want to point fingers, but {t} has been quiet. What do you think, {t}?", "Gut feeling... I'm a little worried about {t}.", "Can we talk about {t}? Something feels off, and I hope I'm wrong."],
+    claim: ["Just so everyone knows, I'm a villager. I promise.", "I'm on your side, truly. Let's be careful with each other."],
+    death: ["I'm so sorry, {v}. That's awful.", "{v} was one of the good ones. We have to be careful now."],
+    reply: ["Me? I promise it isn't me, {n}. Please look somewhere else.", "Oh, that hurts. I'm just trying to help us."],
+    defend: ["Please listen. I'm town, and if you vote me out the Mafia gets a free turn.", "I know it looks bad, but I'm only trying to help. Think about who pushed this."],
+    vouch: ["I trust {t}. They've been straight with me."]
+  },
+  blunt: {
+    accuse: ["{t}. Something's off with you.", "I'm voting {t}. Call it instinct.", "{t}, you've said nothing useful. Why?"],
+    claim: ["Not me. Next.", "I'm town. Don't waste time on me."],
+    death: ["{v} is gone. Someone here did that.", "That's what happens when we sit around. Pick a suspect."],
+    reply: ["Wrong target.", "Cute. But no."],
+    defend: ["I'm not Mafia. Count the votes and ask who started this.", "You're about to make a mistake. Look closer."],
+    vouch: ["{t} is fine. Leave them alone."]
+  },
+  playful: {
+    accuse: ["I'm not saying {t} is a mobster, but they do have the look of a mobster.", "{t}, you're sweating. Are you sweating?", "My spidey sense says {t}. It's usually wrong, but still."],
+    claim: ["I'm an honest villager. I even return my shopping carts.", "Me, Mafia? I can't even lie about my age."],
+    death: ["RIP {v}. You'll be missed. Mostly your snacks.", "Well, that escalated quickly, {v}."],
+    reply: ["Whoa, who, me? I'm innocent as a bowl of pasta.", "You wound me, {n}. Deeply."],
+    defend: ["Okay, okay, plot twist: I'm a villager. Please don't vote me out.", "If I were Mafia I'd have a much better poker face. Look at this face."],
+    vouch: ["{t} seems cool. I'd share fries with {t}."]
+  }
+};
+var fill = (s, vars) => s.replace(/\{(\w)\}/g, (_, k) => vars[k] ?? "");
+function tasks(room, g, t) {
+  const out = [];
+  const bots = g.players.filter((p) => p.bot);
+  const mem = room.bots;
+  for (const b of bots) {
+    if (g.phase === "reveal" && !b.seenRole) out.push({ id: `ack:${b.id}`, bot: b, min: t.botRevealMinMs, max: t.botRevealMaxMs });
+    if (g.phase === "night" && b.alive && g.step === b.role && g.canTarget(b.id).length) {
+      const mine = g.actors();
+      const humansMafia = b.role === "mafia" ? mine.filter((m) => !m.bot) : [];
+      const waitingOnHuman = humansMafia.length > 0 && humansMafia.every((m) => !g.mafiaPicks[m.id]);
+      const already = b.role === "mafia" ? g.mafiaPicks[b.id] : b.role === "doctor" ? g.doctorPick : g.detectivePick;
+      if (!waitingOnHuman && !already) out.push({ id: `night:${b.id}`, bot: b, min: t.botNightMinMs, max: t.botNightMaxMs });
+    }
+    if (g.phase === "vote" && b.alive && !g.votes[b.id]) {
+      out.push({ id: `vote:${b.id}`, bot: b, min: t.botVoteMinMs, max: Math.min(t.botVoteMaxMs, g.settings.voteTimerSec * 600) });
+    }
+    if (g.phase === "day" && b.alive && (mem.done[`talk:${b.id}`] ?? 0) < 2) {
+      out.push({ id: `talk:${b.id}`, bot: b, min: t.botTalkMinMs, max: Math.min(t.botTalkMaxMs, g.settings.dayTimerSec * 650) });
+    }
+    if (g.phase === "defense" && g.defendants[g.defenseIdx] === b.id && !(mem.done[`defend:${b.id}`] ?? 0)) {
+      out.push({ id: `defend:${b.id}`, bot: b, min: t.botDefendMinMs, max: t.botDefendMaxMs });
+    }
+    if (["day", "vote", "defense"].includes(g.phase) && b.alive && mem.replies.includes(b.id)) {
+      out.push({ id: `reply:${b.id}`, bot: b, min: t.botReplyMinMs, max: t.botReplyMaxMs });
+    }
+  }
+  return out;
+}
+var keyOf = (g) => `${g.phase}:${g.round}:${g.voteStage}:${g.defenseIdx}:${g.stepIdx}`;
+function syncBots(room, g) {
+  const key = keyOf(g);
+  if (!room.bots || room.bots.key !== key) room.bots = { key, due: {}, done: {}, replies: [] };
+}
+function noteMentions(room, g, speakerId, text) {
+  syncBots(room, g);
+  const low = text.toLowerCase();
+  for (const b of g.players) {
+    if (b.bot && b.alive && b.id !== speakerId && new RegExp(`\\b${b.name.toLowerCase()}\\b`).test(low) && !room.bots.replies.includes(b.id)) {
+      room.bots.replies.push(b.id);
+    }
+  }
+}
+function suspects(g, bot) {
+  return g.alive().filter((p) => p.id !== bot.id);
+}
+function chooseTarget(g, bot, pool, rng) {
+  if (!pool.length) return void 0;
+  if (bot.role === "detective") {
+    const found = pool.find((p) => (g.notes[bot.id] ?? []).some((n) => n.targetId === p.id && n.isMafia));
+    if (found) return found;
+    const cleared = new Set((g.notes[bot.id] ?? []).filter((n) => !n.isMafia).map((n) => n.targetId));
+    const fresh = pool.filter((p) => !cleared.has(p.id));
+    if (fresh.length) return pickOf(fresh, rng);
+  }
+  return pickOf(pool, rng);
+}
+function act(room, g, id, bot, rng) {
+  const [kind] = id.split(":");
+  const persona = bot.persona ?? "warm";
+  const L = LINES[persona];
+  const name = (p) => p?.name ?? "someone";
+  const mem = room.bots;
+  const bump = () => mem.done[id] = (mem.done[id] ?? 0) + 1;
+  if (kind === "ack") {
+    g.ackRole(bot.id);
+  } else if (kind === "night") {
+    const allowed = new Set(g.canTarget(bot.id));
+    let pool = g.alive().filter((p) => allowed.has(p.id));
+    if (bot.role === "mafia") {
+      const partner = Object.entries(g.mafiaPicks).find(([mid]) => mid !== bot.id);
+      const target = partner ? g.player(partner[1]) : chooseTarget(g, bot, pool, rng);
+      if (target) g.nightAction(bot.id, target.id);
+    } else if (bot.role === "doctor") {
+      g.nightAction(bot.id, pickOf(pool, rng).id);
+    } else {
+      const t = chooseTarget(g, bot, pool, rng);
+      if (t) g.nightAction(bot.id, t.id);
+    }
+  } else if (kind === "vote") {
+    const pool = g.phase === "vote" && g.voteStage === "final" && g.defendants.length ? g.alive().filter((p) => g.defendants.includes(p.id) && p.id !== bot.id) : suspects(g, bot);
+    const final = g.voteStage === "final" && g.defendants.length > 0;
+    let target = "skip";
+    const mafiaAllies = new Set(g.alive("mafia").map((p) => p.id));
+    if (!final) {
+      const choices = bot.role === "mafia" ? pool.filter((p) => !mafiaAllies.has(p.id)) : pool;
+      const counts = g.tally();
+      const leaning = choices.filter((p) => (counts[p.id] ?? 0) > 0).sort((a, b) => (counts[b.id] ?? 0) - (counts[a.id] ?? 0))[0];
+      const pickChoice = bot.role === "mafia" && leaning && rng() < 0.6 ? leaning : chooseTarget(g, bot, choices, rng);
+      if (pickChoice && rng() > 0.08) target = pickChoice.id;
+    } else if (pool.length) {
+      const d = pool[0];
+      const known = (g.notes[bot.id] ?? []).find((n) => n.targetId === d.id);
+      let eliminate;
+      if (bot.role === "mafia") eliminate = !mafiaAllies.has(d.id);
+      else if (known) eliminate = known.isMafia;
+      else eliminate = rng() < 0.6;
+      if (eliminate) target = d.id;
+    }
+    g.castVote(bot.id, target);
+  } else if (kind === "talk") {
+    const n = mem.done[id] ?? 0;
+    const others = suspects(g, bot);
+    const death = g.lastNightDeathId ? g.player(g.lastNightDeathId) : void 0;
+    let text;
+    if (n === 0 && death && rng() < 0.7) {
+      text = fill(pickOf(L.death, rng), { v: name(death) });
+    } else if (rng() < 0.25 && n === 1) {
+      text = pickOf(L.claim, rng);
+    } else {
+      let pool = others;
+      if (bot.role === "mafia") pool = others.filter((p) => !g.alive("mafia").some((m) => m.id === p.id));
+      const t = bot.role === "detective" ? chooseTarget(g, bot, pool, rng) : pickOf(pool.length ? pool : others, rng);
+      text = t ? fill(pickOf(L.accuse, rng), { t: name(t) }) : pickOf(L.claim, rng);
+    }
+    g.say(bot.id, text);
+    bump();
+  } else if (kind === "defend") {
+    g.say(bot.id, pickOf(L.defend, rng));
+    bump();
+  } else if (kind === "reply") {
+    g.say(bot.id, fill(pickOf(L.reply, rng), { n: "friend" }));
+    mem.replies = mem.replies.filter((r) => r !== bot.id);
+  }
+}
+function runBots(room, g, now, t, rng = Math.random) {
+  if (!g.players.some((p) => p.bot)) {
+    room.botNext = null;
+    return false;
+  }
+  syncBots(room, g);
+  let changed = false;
+  for (let pass = 0; pass < 6; pass++) {
+    const pending = tasks(room, g, t);
+    let acted = false;
+    for (const task of pending) {
+      const mem = room.bots;
+      if (mem.due[task.id] === void 0) mem.due[task.id] = now + task.min + rng() * Math.max(0, task.max - task.min);
+      if (now >= mem.due[task.id]) {
+        delete mem.due[task.id];
+        act(room, g, task.id, task.bot, rng);
+        changed = acted = true;
+      }
+    }
+    if (!acted) break;
+  }
+  const waiting = tasks(room, g, t).map((x) => room.bots.due[x.id]).filter((d) => d !== void 0);
+  room.botNext = waiting.length ? Math.min(...waiting) : null;
+  void shuffle;
+  return changed;
+}
+
 // shared/room.ts
 var DEFAULT_TIMING = {
   revealMs: 2500,
@@ -562,7 +802,19 @@ var DEFAULT_TIMING = {
   dawnMs: 15e3,
   resultMs: 12e3,
   voteAllInMs: 2500,
-  defenseLeadMs: 6e3
+  defenseLeadMs: 6e3,
+  botRevealMinMs: 800,
+  botRevealMaxMs: 4e3,
+  botNightMinMs: 1500,
+  botNightMaxMs: 6e3,
+  botVoteMinMs: 4e3,
+  botVoteMaxMs: 4e4,
+  botTalkMinMs: 5e3,
+  botTalkMaxMs: 11e4,
+  botDefendMinMs: 4e3,
+  botDefendMaxMs: 9e3,
+  botReplyMinMs: 2500,
+  botReplyMaxMs: 7e3
 };
 var INSTANT_TIMING = Object.fromEntries(
   Object.keys(DEFAULT_TIMING).map((k) => [k, 0])
@@ -579,7 +831,7 @@ function save(room, game, now) {
   room.game = game.toJSON();
   room.updatedAt = now;
 }
-function keyOf(g) {
+function keyOf2(g) {
   switch (g.phase) {
     case "reveal":
       return `reveal:${g.revealComplete() ? 1 : 0}`;
@@ -613,7 +865,7 @@ function delayFor(g, t, rng) {
   }
 }
 function schedule(room, g, now, t, rng = Math.random) {
-  const key = keyOf(g);
+  const key = keyOf2(g);
   if (key === room.key) return;
   room.key = key;
   const d = delayFor(g, t, rng);
@@ -648,6 +900,10 @@ function fire(g) {
 function tick(room, now, t = DEFAULT_TIMING, rng = Math.random) {
   const g = load(room);
   let changed = false;
+  if (runBots(room, g, now, t, rng)) {
+    changed = true;
+    schedule(room, g, now, t, rng);
+  }
   for (let i = 0; i < 12 && room.due !== null && now >= room.due; i++) {
     const before = g.phase;
     fire(g);
@@ -655,6 +911,7 @@ function tick(room, now, t = DEFAULT_TIMING, rng = Math.random) {
     room.key = "";
     schedule(room, g, Math.max(now, room.due ?? now), t, rng);
     if (g.phase === before && room.due !== null && room.due <= now) room.due = now + 1;
+    if (runBots(room, g, now, t, rng)) schedule(room, g, now, t, rng);
   }
   if (changed) save(room, g, now);
   return changed;
@@ -665,7 +922,7 @@ function randomCode(rng = Math.random) {
 }
 function buildView(room, token, now) {
   const g = load(room);
-  for (const p of g.players) p.connected = now - (room.seen[p.id] ?? 0) < CONNECTED_WINDOW_MS;
+  for (const p of g.players) p.connected = !!p.bot || now - (room.seen[p.id] ?? 0) < CONNECTED_WINDOW_MS;
   const view = g.viewFor(token ?? null);
   return { ...view, code: room.code, now, due: room.due };
 }
@@ -700,6 +957,21 @@ function applyAction(room, a, now, t, rng = Math.random) {
       break;
     case "leave":
       r = g.removePlayer(token);
+      break;
+    case "addBot": {
+      r = hostOnly(g, token) ?? { ok: true };
+      for (let i = 0; r.ok && i < Math.min(Math.max(a.count ?? 1, 1), 10); i++) r = g.addBot();
+      break;
+    }
+    case "removeBot":
+      r = hostOnly(g, token) ?? (g.player(a.target)?.bot ? g.removePlayer(a.target) : { ok: false, error: "That is not a bot." });
+      break;
+    case "say":
+      r = g.say(token, a.text);
+      if (r.ok) {
+        save(room, g, now);
+        noteMentions(room, g, token, a.text);
+      }
       break;
     default:
       return { ok: false, error: "Unknown action." };
@@ -752,7 +1024,7 @@ async function handle(a, store, now = Date.now(), timing = DEFAULT_TIMING, rng =
   if (a.action === "poll" || a.action === "watch") {
     const peek = await store.get(code);
     if (!peek) return err("Room not found.", 404);
-    const needsWrite = peek.due !== null && now >= peek.due || token && now - (peek.seen[token] ?? 0) >= HEARTBEAT_MS;
+    const needsWrite = peek.due !== null && now >= peek.due || peek.botNext != null && now >= peek.botNext || token && now - (peek.seen[token] ?? 0) >= HEARTBEAT_MS;
     if (!needsWrite) return { ok: true, code, view: buildView(peek, token, now) };
   }
   const release = await store.lock(code);
@@ -763,7 +1035,7 @@ async function handle(a, store, now = Date.now(), timing = DEFAULT_TIMING, rng =
     let result = { ok: true };
     if (a.action !== "poll" && a.action !== "watch") {
       result = applyAction(room, a, now, timing, rng);
-      if (result.ok && a.action === "skip") tick(room, now, timing, rng);
+      if (result.ok) tick(room, now, timing, rng);
     }
     if (result.ok) {
       heartbeat(room, token, now);

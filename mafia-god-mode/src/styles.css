@@ -117,3 +117,14 @@ input[type="text"], input:not([type]), select { font: 1rem var(--body); padding:
 .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .rules-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
 .rules-list b { color: var(--lamp); }
+
+.rtag.bot { margin-left: 8px; border: 1px solid var(--line); border-radius: 99px; padding: 0 6px; font-size: .6rem; }
+.prow .x { margin-left: auto; background: none; border: 0; color: var(--muted); font-size: 1.3rem; line-height: 1; cursor: pointer; padding: 0 4px; }
+.prow .x + .rtag { margin-left: 8px; }
+.talklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; }
+.talklist li { background: var(--panel); border-radius: 8px; padding: 8px 10px; font-size: .92rem; }
+.talklist li.mine { border-left: 3px solid var(--lamp); }
+.talklist b { color: var(--lamp); margin-right: 4px; }
+.talkform { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.talkform .btn { width: auto; padding-inline: 18px; }
+.tv-talk { width: 100%; }

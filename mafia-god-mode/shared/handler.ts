@@ -42,7 +42,7 @@ export async function handle(
   if (a.action === "poll" || a.action === "watch") {
     const peek = await store.get(code);
     if (!peek) return err("Room not found.", 404);
-    const needsWrite = (peek.due !== null && now >= peek.due) || (token && now - (peek.seen[token] ?? 0) >= HEARTBEAT_MS);
+    const needsWrite = (peek.due !== null && now >= peek.due) || (peek.botNext != null && now >= peek.botNext) || (token && now - (peek.seen[token] ?? 0) >= HEARTBEAT_MS);
     if (!needsWrite) return { ok: true, code, view: buildView(peek, token, now) };
   }
 
@@ -54,7 +54,7 @@ export async function handle(
     let result: Result = { ok: true };
     if (a.action !== "poll" && a.action !== "watch") {
       result = applyAction(room, a, now, timing, rng);
-      if (result.ok && a.action === "skip") tick(room, now, timing, rng);
+      if (result.ok) tick(room, now, timing, rng); // apply skips and let bots react to what just happened
     }
     if (result.ok) {
       heartbeat(room, token, now);

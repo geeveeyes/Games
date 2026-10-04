@@ -185,6 +185,7 @@ function Pick({
           >
             <span className="av">{p.name[0]}</span>
             <span>{p.name}</span>
+            {p.bot && <span className="rtag bot">bot</span>}
             {p.role && <span className="rtag">{ROLE_INFO[p.role].title}</span>}
             {badges?.[p.id] && <span className="rtag hot">{badges[p.id]}</span>}
           </button>
@@ -221,6 +222,38 @@ function RoleCard({ role, partners }: { role: Role; partners: string[] }) {
         </>
       )}
     </button>
+  );
+}
+
+function TalkBox({ v, act }: { v: ClientView; act: Act }) {
+  const [text, setText] = useState("");
+  const alive = !!v.you?.alive;
+  const send = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const t = text.trim();
+    if (!t) return;
+    setText("");
+    await act({ action: "say", text: t });
+  };
+  if (!v.talk.length && !alive) return null;
+  return (
+    <section className="stack talk" aria-label="Table talk">
+      <h3>Table talk</h3>
+      {v.talk.length === 0 && <p className="muted small">Nobody has spoken yet.</p>}
+      <ul className="talklist">
+        {v.talk.map((t) => (
+          <li key={t.seq} className={t.id === v.you?.id ? "mine" : ""}>
+            <b>{t.name}</b>{t.bot && <span className="rtag bot">bot</span>} {t.text}
+          </li>
+        ))}
+      </ul>
+      {alive && (
+        <form className="talkform" onSubmit={send}>
+          <input id="say" value={text} maxLength={140} placeholder="Say something to the table" onChange={(e) => setText(e.target.value)} autoComplete="off" />
+          <button className="btn" type="submit" disabled={!text.trim()}>Say</button>
+        </form>
+      )}
+    </section>
   );
 }
 
@@ -329,6 +362,7 @@ function PlayerScreen({ v, act, now, onLeave }: { v: ClientView; act: Act; now: 
           <div className="sun" aria-hidden />
           <Narration v={v} />
           <Timer due={v.due} now={now} label="Voting opens in" />
+          <TalkBox v={v} act={act} />
           <Roster players={v.players} />
           <HostSkip v={v} act={act} label="Start the vote now" />
         </div>
@@ -345,6 +379,7 @@ function PlayerScreen({ v, act, now, onLeave }: { v: ClientView; act: Act; now: 
           <div className="defender">{speaker?.name}</div>
           <p className="muted">{mineTurn ? "Your turn. Convince the village you are innocent." : "is defending themselves. Listen closely."}</p>
           <Timer due={v.due} now={now} label="Time to speak" />
+          <TalkBox v={v} act={act} />
           <HostSkip v={v} act={act} label={v.defenseIdx + 1 < v.defendants.length ? "Next speaker" : "Go to the final vote"} />
         </div>
       );
@@ -370,6 +405,7 @@ function PlayerScreen({ v, act, now, onLeave }: { v: ClientView; act: Act; now: 
             </button>
           )}
           <p className="muted center">{v.vote.voted} of {v.vote.eligible} have voted</p>
+          <TalkBox v={v} act={act} />
           <HostSkip v={v} act={act} label="Close the vote now" />
         </div>
       );
@@ -395,13 +431,15 @@ function PlayerScreen({ v, act, now, onLeave }: { v: ClientView; act: Act; now: 
   }
 }
 
-function Roster({ players, showRoles }: { players: Player[]; showRoles?: boolean }) {
+function Roster({ players, showRoles, onRemove }: { players: Player[]; showRoles?: boolean; onRemove?: (id: string) => void }) {
   return (
     <div className="roster">
       {players.map((p) => (
         <div key={p.id} className={`prow static ${!p.alive ? "dead" : ""}`}>
           <span className="av">{p.name[0]}</span>
           <span>{p.name}</span>
+          {p.bot && <span className="rtag bot">bot</span>}
+          {p.bot && onRemove && <button className="x" aria-label={`Remove ${p.name}`} onClick={() => onRemove(p.id)}>×</button>}
           {(showRoles || p.role) && p.role && <span className="rtag">{ROLE_INFO[p.role].title}</span>}
           {!p.alive && <span className="rtag">out</span>}
         </div>
@@ -439,8 +477,14 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
       </div>
       <section className="stack">
         <h3>Players ({n})</h3>
-        <Roster players={v.players.map((p) => ({ ...p, role: null }))} />
-        {!enough && <p className="muted">Waiting for at least {v.minPlayers} players.</p>}
+        <Roster players={v.players.map((p) => ({ ...p, role: null }))} onRemove={host ? (id) => act({ action: "removeBot", target: id }) : undefined} />
+        {host && (
+          <div className="row2">
+            <button className="btn ghost" onClick={() => act({ action: "addBot" })}>Add a bot</button>
+            <button className="btn ghost" onClick={() => act({ action: "addBot", count: Math.max(1, 6 - n) })} disabled={n >= 6}>Fill to 6 players</button>
+          </div>
+        )}
+        {!enough && <p className="muted">Need at least {v.minPlayers} players. Add bots to fill empty seats.</p>}
       </section>
       <section className="stack">
         <h3>Game setup {host ? "" : "(host controls)"}</h3>
@@ -522,6 +566,11 @@ function Display({ v, now, narratorOn, enable }: { v: ClientView; now: () => num
         {timed && <Timer due={v.due} now={now} />}
         {v.phase === "lobby" && (
           <p className="muted">Open this site on your phone, choose "Join game" and enter <b className="mono">{v.code}</b>.</p>
+        )}
+        {v.talk.length > 0 && ["day", "defense", "vote"].includes(v.phase) && (
+          <ul className="talklist tv-talk">
+            {v.talk.slice(-4).map((t) => <li key={t.seq}><b>{t.name}</b> {t.text}</li>)}
+          </ul>
         )}
         {v.phase === "over" && <p className="tv-say win">{v.winner === "town" ? "Town wins" : "Mafia wins"}</p>}
         {!narratorOn && <button className="btn" onClick={enable}>Turn on the narrator and music</button>}

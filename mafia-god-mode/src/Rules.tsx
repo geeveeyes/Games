@@ -57,6 +57,11 @@ export function RulesModal({ onClose }: { onClose: () => void }) {
           </section>
 
           <section className="stack">
+            <h3>Playing with bots</h3>
+            <p>If you are short on players, the host can add bots in the lobby. Bots take real roles, act at night, talk at the table and vote like anyone else, and they are always labelled “bot”. Mention a bot by name in the table-talk box and it will answer.</p>
+          </section>
+
+          <section className="stack">
             <h3>When you are out</h3>
             <p>You can still watch, but you must stay silent and not hint at what you know. Roles stay hidden until the game ends, unless the host turned on reveals.</p>
           </section>

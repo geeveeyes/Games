@@ -22,6 +22,10 @@ Modes: in-person with TV, in-person phones-only, remote. Roles v1: Mafia, Villag
 
 Script lives in `shared/game.ts` (`narrate(text, cue)`; `|` = short pause, `||` = long pause). `src/narrator.ts` speaks it with Web Speech and drives `src/audio.ts` (Web Audio synth ambience and stings by cue). Fixed style chosen by ear: Google UK English Male, rate 1, pitch 0.5, music 60%; a single on/off button (needs one tap for browser audio). Voice quality depends on the device. Next upgrade: pre-generate recorded clips with a neural TTS and play those instead.
 
+## Bots
+
+`shared/bots.ts`. Bots act lazily inside `tick()` (no timers), with random delays stored in `room.bots`; `room.botNext` makes polls write when a bot is due. Table talk is `game.talk` (`say`). Dialogue is templated per persona; swap `LINES`/`act` for an LLM call to upgrade it.
+
 ## Next steps, in order
 
 1. Deploy to Vercel with Upstash Redis and play one real game on phones.

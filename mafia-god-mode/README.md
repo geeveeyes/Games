@@ -21,6 +21,17 @@ Host settings: Doctor on/off, Detective on/off, Doctor self-save (default on), s
 
 Night order: Mafia, Doctor, Detective. If a night role is dead, the app still waits a random few seconds so nobody can tell. Mafia must agree on one victim. Players never learn who the Doctor saved.
 
+## Bots
+
+The host can add bots in the lobby (**Add a bot**, **Fill to 6 players**, × to remove). Bots take real roles and play by the same rules as people:
+
+- They confirm their role, act at night (Mafia bots agree on a victim, the Doctor and Detective choose), and vote in both rounds. A Detective bot uses what it learns; Mafia bots protect each other.
+- They talk in the **table talk** feed during the day and defend themselves when accused. Each has one of three personalities (warm, blunt, playful). Mention a bot by name in the chat box and it answers.
+- They act after random delays, so their speed never reveals their role. They are always labelled "bot".
+- Bot lines are scripted templates, not an AI model, so there is no cost or API key. The code is in `shared/bots.ts`. To make the conversation more natural later, only the line generation needs to change.
+
+One person plus bots can play a full game: `npm run e2e:solo`.
+
 ## Run locally
 
 ```bash

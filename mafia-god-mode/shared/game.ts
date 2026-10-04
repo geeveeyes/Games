@@ -43,9 +43,27 @@ export const DEFAULT_SETTINGS: Settings = {
 export const MIN_PLAYERS = 4;
 export const MAX_PLAYERS = 20;
 
+export type Persona = "warm" | "blunt" | "playful";
+
+export interface Talk {
+  seq: number;
+  id: string;
+  name: string;
+  text: string;
+  bot: boolean;
+}
+
+export const BOT_NAMES = [
+  "Maya", "Theo", "Isla", "Dev", "Nora", "Sam", "Zoe", "Kai", "Lila", "Omar",
+  "Ruby", "Finn", "Anika", "Leo", "June", "Marco", "Tess", "Ali", "Cleo", "Jules",
+];
+const PERSONAS: Persona[] = ["warm", "blunt", "playful"];
+
 export interface Player {
   id: string;
   name: string;
+  bot?: boolean;
+  persona?: Persona;
   role: Role | null;
   alive: boolean;
   connected: boolean;
@@ -103,6 +121,8 @@ export class Game {
   hostId: string | null = null;
   winner: Winner | null = null;
   lines: Line[] = [];
+  talk: Talk[] = [];
+  talkSeq = 0;
   notes: Record<string, Note[]> = {};
 
   // night
@@ -173,7 +193,34 @@ export class Game {
   removePlayer(id: string): Result {
     if (this.phase !== "lobby") return fail("Players can only leave from the lobby.");
     this.players = this.players.filter((p) => p.id !== id);
-    if (this.hostId === id) this.hostId = this.players.find((p) => p.connected)?.id ?? this.players[0]?.id ?? null;
+    if (this.hostId === id) this.hostId = this.players.find((p) => p.connected && !p.bot)?.id ?? this.players.find((p) => !p.bot)?.id ?? null;
+    return ok();
+  }
+
+  addBot(): Result {
+    if (this.phase !== "lobby") return fail("Bots can only join from the lobby.");
+    if (this.players.length >= MAX_PLAYERS) return fail("The room is full.");
+    const taken = new Set(this.players.map((p) => p.name.toLowerCase()));
+    const free = BOT_NAMES.filter((n) => !taken.has(n.toLowerCase()));
+    if (!free.length) return fail("No bot names left.");
+    const name = this.pick(free);
+    const bots = this.players.filter((p) => p.bot).length;
+    this.players.push({
+      id: `bot-${name.toLowerCase()}`, name, bot: true, persona: PERSONAS[bots % PERSONAS.length],
+      role: null, alive: true, connected: true, seenRole: false,
+    });
+    return ok();
+  }
+
+  /** A line in the table-talk feed, from a person or a bot. */
+  say(playerId: string, text: string): Result {
+    const me = this.player(playerId);
+    if (!me?.alive) return fail("Only living players can talk.");
+    if (!["day", "vote", "defense", "dawn"].includes(this.phase)) return fail("Wait for the day to talk.");
+    const clean = text.replace(/\s+/g, " ").trim().slice(0, 140);
+    if (!clean) return fail("Type something to say.");
+    this.talk.push({ seq: ++this.talkSeq, id: me.id, name: me.name, text: clean, bot: !!me.bot });
+    if (this.talk.length > 40) this.talk.shift();
     return ok();
   }
 
@@ -181,7 +228,7 @@ export class Game {
     const p = this.player(id);
     if (p) p.connected = connected;
     if (!connected && this.hostId === id) {
-      const next = this.players.find((q) => q.connected && q.id !== id);
+      const next = this.players.find((q) => q.connected && !q.bot && q.id !== id);
       if (next) this.hostId = next.id;
     }
   }
@@ -253,6 +300,7 @@ export class Game {
     this.doctorPick = null;
     this.detectivePick = null;
     this.votes = {};
+    this.talk = [];
     this.lastResult = null;
     this.narrate(
       this.classic()
@@ -544,6 +592,7 @@ export class Game {
     this.winner = null;
     this.notes = {};
     this.lines = [];
+    this.talk = [];
     this.lastResult = null;
     this.defendants = [];
     this.defenseIdx = 0;
@@ -575,12 +624,14 @@ export class Game {
       hostId: this.hostId,
       winner: this.winner,
       lines: this.lines.slice(-12),
+      talk: this.talk.slice(-14),
       players: this.players.map((p) => ({
         id: p.id,
         name: p.name,
         alive: p.alive,
         connected: p.connected,
         seenRole: p.seenRole,
+        bot: !!p.bot,
         role: this.phase === "lobby" ? null : showRole(p) ? p.role : null,
       })),
       you: me

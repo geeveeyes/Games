@@ -1,5 +1,6 @@
 // Room = Game + lazy timers. Vercel functions cannot keep timers alive, so every
 // poll or action calls `tick`, which applies whatever transition is due.
+import { type BotMem, noteMentions, runBots } from "./bots";
 import { Game, type GameView, type Result } from "./game";
 
 export interface Timing {
@@ -13,6 +14,12 @@ export interface Timing {
   resultMs: number;
   voteAllInMs: number;
   defenseLeadMs: number; // narration time before a defender's clock really starts
+  botRevealMinMs: number; botRevealMaxMs: number;
+  botNightMinMs: number; botNightMaxMs: number;
+  botVoteMinMs: number; botVoteMaxMs: number;
+  botTalkMinMs: number; botTalkMaxMs: number;
+  botDefendMinMs: number; botDefendMaxMs: number;
+  botReplyMinMs: number; botReplyMaxMs: number;
 }
 
 export const DEFAULT_TIMING: Timing = {
@@ -26,6 +33,12 @@ export const DEFAULT_TIMING: Timing = {
   resultMs: 12_000,
   voteAllInMs: 2500,
   defenseLeadMs: 6000,
+  botRevealMinMs: 800, botRevealMaxMs: 4000,
+  botNightMinMs: 1500, botNightMaxMs: 6000,
+  botVoteMinMs: 4000, botVoteMaxMs: 40_000,
+  botTalkMinMs: 5000, botTalkMaxMs: 110_000,
+  botDefendMinMs: 4000, botDefendMaxMs: 9000,
+  botReplyMinMs: 2500, botReplyMaxMs: 7000,
 };
 
 export const INSTANT_TIMING: Timing = Object.fromEntries(
@@ -38,6 +51,8 @@ export interface RoomData {
   key: string;
   due: number | null;
   seen: Record<string, number>; // playerId -> last heartbeat (ms)
+  bots?: BotMem;
+  botNext?: number | null; // earliest time a bot wants to act
   updatedAt: number;
 }
 
@@ -132,6 +147,10 @@ function fire(g: Game) {
 export function tick(room: RoomData, now: number, t: Timing = DEFAULT_TIMING, rng: () => number = Math.random): boolean {
   const g = load(room);
   let changed = false;
+  if (runBots(room, g, now, t, rng)) {
+    changed = true;
+    schedule(room, g, now, t, rng);
+  }
   for (let i = 0; i < 12 && room.due !== null && now >= room.due; i++) {
     const before = g.phase;
     fire(g);
@@ -139,6 +158,7 @@ export function tick(room: RoomData, now: number, t: Timing = DEFAULT_TIMING, rn
     room.key = "";
     schedule(room, g, Math.max(now, room.due ?? now), t, rng);
     if (g.phase === before && room.due !== null && room.due <= now) room.due = now + 1; // safety
+    if (runBots(room, g, now, t, rng)) schedule(room, g, now, t, rng);
   }
   if (changed) save(room, g, now);
   return changed;
@@ -157,7 +177,10 @@ export type Action =
   | { action: "vote"; code: string; token: string; target: string }
   | { action: "skip"; code: string; token: string; at: string }
   | { action: "rematch"; code: string; token: string }
-  | { action: "leave"; code: string; token: string };
+  | { action: "leave"; code: string; token: string }
+  | { action: "addBot"; code: string; token: string; count?: number }
+  | { action: "removeBot"; code: string; token: string; target: string }
+  | { action: "say"; code: string; token: string; text: string };
 
 export type ApiResponse =
   | { ok: true; code: string; view: ClientView }
@@ -176,7 +199,7 @@ export function randomCode(rng: () => number = Math.random) {
 
 export function buildView(room: RoomData, token: string | undefined, now: number): ClientView {
   const g = load(room);
-  for (const p of g.players) p.connected = now - (room.seen[p.id] ?? 0) < CONNECTED_WINDOW_MS;
+  for (const p of g.players) p.connected = !!p.bot || now - (room.seen[p.id] ?? 0) < CONNECTED_WINDOW_MS;
   const view = g.viewFor(token ?? null);
   return { ...view, code: room.code, now, due: room.due };
 }
@@ -213,6 +236,21 @@ export function applyAction(room: RoomData, a: Action, now: number, t: Timing, r
       break;
     case "leave":
       r = g.removePlayer(token);
+      break;
+    case "addBot": {
+      r = hostOnly(g, token) ?? { ok: true };
+      for (let i = 0; r.ok && i < Math.min(Math.max(a.count ?? 1, 1), 10); i++) r = g.addBot();
+      break;
+    }
+    case "removeBot":
+      r = hostOnly(g, token) ?? (g.player(a.target)?.bot ? g.removePlayer(a.target) : { ok: false, error: "That is not a bot." });
+      break;
+    case "say":
+      r = g.say(token, a.text);
+      if (r.ok) {
+        save(room, g, now);
+        noteMentions(room, g, token, a.text);
+      }
       break;
     default:
       return { ok: false, error: "Unknown action." };
