@@ -2,16 +2,20 @@ import { useEffect, useRef } from "react";
 
 export function RulesModal({ onClose }: { onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Run once. `onClose` changes identity on every refresh of the room, so it must not be a dependency,
+  // or focus would be pulled out of the text box (closing a phone's keyboard) each time the game updates.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     ref.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeRef.current();
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
       prev?.focus?.();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="modal-back" onClick={onClose}>

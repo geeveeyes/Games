@@ -22,16 +22,20 @@ export function FeedbackModal({ onClose, context }: { onClose: () => void; conte
   const [state, setState] = useState<"edit" | "sending" | "sent">("edit");
   const [err, setErr] = useState("");
 
+  // Run once. `onClose` changes identity on every refresh of the room, so it must not be a dependency,
+  // or focus would be pulled out of the text box (closing a phone's keyboard) each time the game updates.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     ref.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeRef.current();
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
       prev?.focus?.();
     };
-  }, [onClose]);
+  }, []);
 
   const send = async (e: React.FormEvent) => {
     e.preventDefault();

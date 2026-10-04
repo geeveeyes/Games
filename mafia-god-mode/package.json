@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "e2e": "MGM_FAST=1 node e2e/play.mjs",
     "e2e:solo": "MGM_FAST=1 node e2e/solo.mjs",
+    "e2e:typing": "node e2e/feedback-in-room.mjs",
     "build:api": "node scripts-bundle-api.mjs"
   },
   "dependencies": {

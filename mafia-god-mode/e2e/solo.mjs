@@ -48,7 +48,17 @@ while (!over && Date.now() < deadline) {
   if (await pg.locator("#say").count()) {
     if (!said) {
       const names = await pg.locator(".talklist b").allInnerTexts();
-      await pg.fill("#say", `${names[0] ?? "Maya"}, you seem suspicious`);
+      // Type slowly across several room refreshes: focus must stay in the box or a phone keyboard closes.
+      const msg = `${names[0] ?? "Maya"}, you seem suspicious`;
+      await pg.click("#say");
+      let lost = 0;
+      for (const ch of msg) {
+        await pg.keyboard.type(ch);
+        await pg.waitForTimeout(120);
+        if ((await pg.evaluate(() => document.activeElement?.id)) !== "say") lost++;
+      }
+      console.log(`chat box: typed ${(await pg.inputValue("#say")).length}/${msg.length}, focus lost ${lost}x`);
+      if (lost) process.exitCode = 1;
       await pg.click("button:has-text('Say')");
       said = true;
     }
