@@ -5,7 +5,7 @@
 export type Mood = "off" | "night" | "day" | "tense" | "win" | "lose";
 export type Sting = "gong" | "bell" | "death" | "reveal";
 
-type Scene = { out: GainNode; stop: () => void };
+type Scene = { out: GainNode; quiet: () => void; stop: () => void };
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
@@ -71,13 +71,14 @@ export class Ambience {
     this.music.gain.setTargetAtTime(target, this.ctx.currentTime, 0.4);
   }
 
-  setMood(mood: Mood) {
+  setMood(mood: Mood, fast = false) {
     if (!this.ctx || this.current?.mood === mood) return;
     const ctx = this.ctx;
     const old = this.current;
     if (old) {
-      old.scene.out.gain.setTargetAtTime(0, ctx.currentTime, 1.2);
-      setTimeout(() => old.scene.stop(), 6000);
+      old.scene.quiet(); // no new howls or chimes may start while the scene fades out
+      old.scene.out.gain.setTargetAtTime(0, ctx.currentTime, fast ? 0.12 : 1.2);
+      setTimeout(() => old.scene.stop(), fast ? 1500 : 6000);
     }
     this.current = null;
     if (mood === "off") return;
@@ -88,8 +89,9 @@ export class Ambience {
     this.current = { mood, scene };
   }
 
+  /** Leaving a room: silence quickly, not a long fade. */
   stop() {
-    this.setMood("off");
+    this.setMood("off", true);
   }
 
   // ---------- scenes ----------
@@ -213,6 +215,7 @@ export class Ambience {
 
     return {
       out,
+      quiet: () => timers.forEach(clearTimeout),
       stop: () => {
         timers.forEach(clearTimeout);
         nodes.forEach((n) => {

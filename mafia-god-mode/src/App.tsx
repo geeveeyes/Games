@@ -400,7 +400,24 @@ function HostSkip({ v, act, label }: { v: ClientView; act: Act; label: string })
 }
 
 // ---------- Player screens ----------
-function PlayerScreen({ v, act, now, onLeave, onFeedback }: { v: ClientView; act: Act; now: () => number; onLeave: () => void; onFeedback: () => void }) {
+/**
+ * The player's screen: one body per game phase, plus the chat box. The chat box is rendered here, as a sibling after
+ * the phase body, so it keeps the same place in the tree when the game moves from phase to phase. That keeps a
+ * half-typed message and the keyboard's focus intact instead of rebuilding the box every time the phase changes.
+ */
+function PlayerScreen(props: { v: ClientView; act: Act; now: () => number; onLeave: () => void; onFeedback: () => void }) {
+  const { v, act } = props;
+  const me = v.you;
+  const talking = !!me && ["dawn", "day", "defense", "vote", "result"].includes(v.phase) ? true : !!me && !me.alive && v.phase !== "lobby" && v.phase !== "reveal" && v.phase !== "over";
+  return (
+    <>
+      <PlayerScreenBody {...props} />
+      {talking && <div className="stack left chatslot"><TalkBox v={v} act={act} /></div>}
+    </>
+  );
+}
+
+function PlayerScreenBody({ v, act, now, onLeave, onFeedback }: { v: ClientView; act: Act; now: () => number; onLeave: () => void; onFeedback: () => void }) {
   const me = v.you;
   if (!me) {
     const hostName = v.players.find((p) => p.id === v.hostId)?.name ?? "the host";
@@ -491,7 +508,6 @@ function PlayerScreen({ v, act, now, onLeave, onFeedback }: { v: ClientView; act
           <div className="moon" aria-hidden />
           <h2>{classic ? "Keep your eyes closed" : "Night"}</h2>
           <p className="muted">{me.alive ? (classic ? "Do not peek. The narrator will tell you when it is morning." : "Night roles are acting. Wait for morning.") : "You are out of the game."}</p>
-          {!me.alive && <div className="stack left"><TalkBox v={v} act={act} /></div>}
         </div>
       );
     }
@@ -504,7 +520,6 @@ function PlayerScreen({ v, act, now, onLeave, onFeedback }: { v: ClientView; act
           <div className={v.phase === "dawn" ? "sun" : "gavel"} aria-hidden />
           <Narration v={v} />
           <Timer due={v.due} now={now} label="Next" />
-          {spectator && <div className="stack left"><TalkBox v={v} act={act} /></div>}
           <HostSkip v={v} act={act} label="Continue" />
         </div>
       );
@@ -516,7 +531,6 @@ function PlayerScreen({ v, act, now, onLeave, onFeedback }: { v: ClientView; act
           <div className="sun" aria-hidden />
           <Narration v={v} />
           <Timer due={v.due} now={now} label="Voting opens in" />
-          <TalkBox v={v} act={act} />
           <Roster players={v.players} />
           <HostSkip v={v} act={act} label="Start the vote now" />
         </div>
@@ -533,7 +547,6 @@ function PlayerScreen({ v, act, now, onLeave, onFeedback }: { v: ClientView; act
           <div className="defender">{speaker?.name}</div>
           <p className="muted">{mineTurn ? "Your turn. Convince the village you are innocent." : "is defending themselves. Listen closely."}</p>
           <Timer due={v.due} now={now} label="Time to speak" />
-          <TalkBox v={v} act={act} />
           <HostSkip v={v} act={act} label={v.defenseIdx + 1 < v.defendants.length ? "Next speaker" : "Go to the final vote"} />
         </div>
       );
@@ -566,7 +579,6 @@ function PlayerScreen({ v, act, now, onLeave, onFeedback }: { v: ClientView; act
               ))}</ul>
             </div>
           )}
-          <TalkBox v={v} act={act} />
           <HostSkip v={v} act={act} label="Close the vote now" />
         </div>
       );

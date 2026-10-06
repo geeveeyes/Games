@@ -17,6 +17,7 @@
     "e2e:clips": "node e2e/clips.mjs",
     "e2e:roles": "node e2e/roles.mjs",
     "e2e:history": "node e2e/history.mjs",
+    "e2e:typingphase": "node e2e/typing-phase.mjs",
     "narration": "tsx scripts/generate-narration.ts",
     "build:api": "node scripts-bundle-api.mjs"
   },
