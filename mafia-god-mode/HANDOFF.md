@@ -77,3 +77,9 @@ The chat box is rendered in `PlayerScreen` as a sibling after the phase body (`P
 - `package.json` is deliberately not `"type": "module"` so Vercel compiles `api/` and `shared/` as CommonJS.
 - Timers are lazy (`shared/room.ts`). Never add `setTimeout` for game logic. It will not survive serverless.
 - Secrets live only in `Game`; always expose state through `viewFor`.
+
+## Latest round (feedback CSV + Telugu/Tamil + Bomber)
+- Narration languages: en, te, ta, hi. Tamil/Telugu use a casual spoken register; all are first drafts needing native review.
+- Bomber role (`useBomber`, ~8+ players): Mafia-side, knows the Mafia, unknown to them, reads innocent to the Detective. Wakes first at night; may detonate once (kills itself plus one non-Mafia target before the Doctor/Detective act) or wait. Counts toward Mafia parity; town wins when no Mafia remain.
+- Feedback fixes: two Detectives, final-vote scope, vote reveal, speech-paced night, narrator queue, "Welcome back" bar with two-tap Leave game.
+- User decisions: FEEDBACK_ADMIN_KEY is set; recorded-voice API key not needed.
