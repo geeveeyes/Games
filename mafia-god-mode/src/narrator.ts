@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { clipId } from "../shared/clips";
 import type { Cue } from "../shared/game";
+import { type Lang, LANGS, segmentsOf } from "../shared/script";
 import type { ClientView } from "../shared/room";
 import { Ambience, type Mood, type Sting } from "./audio";
 
@@ -10,37 +12,50 @@ const RATE = 1;
 const PITCH = 0.5;
 const MUSIC_VOL = 0.6;
 
-/** Best-sounding English voice available on this device. Natural/neural voices first, then deep male voices. */
-export function bestVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | undefined {
-  const uk = voices.find((v) => /google uk english male/i.test(v.name));
-  if (uk) return uk;
+/** The best voice for a language. English prefers a deep UK male voice, the way the narrator was tuned; other languages take the best match. */
+export function bestVoice(voices: SpeechSynthesisVoice[], lang: Lang = "en"): SpeechSynthesisVoice | undefined {
+  const base = LANGS.find((l) => l.id === lang)?.bcp47.slice(0, 2) ?? "en";
+  const pool = voices.filter((v) => v.lang.toLowerCase().startsWith(base));
+  if (!pool.length) return lang === "en" ? undefined : undefined;
+  if (lang === "en") {
+    const uk = pool.find((v) => /google uk english male/i.test(v.name));
+    if (uk) return uk;
+  }
   const score = (v: SpeechSynthesisVoice) => {
     const n = v.name.toLowerCase();
-    let s = 0;
-    if (/natural|neural|premium|enhanced|siri|studio/.test(n)) s += 50;
-    if (/google uk english male|daniel|arthur|oliver|alex|fred|aaron|guy|ryan|davis|james|thomas|rishi|lee/.test(n)) s += 25;
-    if (/female|zira|samantha|karen|moira|tessa|susan|hazel|jenny|aria/.test(n)) s -= 8;
-    if (v.lang === "en-GB") s += 8;
-    else if (v.lang.startsWith("en")) s += 5;
-    else s -= 100;
-    if (v.localService) s += 2;
-    return s;
+    let sc = 0;
+    if (/natural|neural|premium|enhanced|siri|studio|google/.test(n)) sc += 50;
+    if (lang === "en") {
+      if (/daniel|arthur|oliver|alex|fred|aaron|guy|ryan|davis|james|thomas|rishi|lee/.test(n)) sc += 25;
+      if (/female|zira|samantha|karen|moira|tessa|susan|hazel|jenny|aria/.test(n)) sc -= 8;
+      if (v.lang === "en-GB") sc += 8;
+    } else if (/male(?!.*female)|madhur|valluvar|prabhat|hemant|ravi/.test(n)) sc += 10;
+    if (v.localService) sc += 2;
+    return sc;
   };
-  return [...voices].sort((a, b) => score(b) - score(a))[0];
+  return [...pool].sort((a, b) => score(b) - score(a))[0];
 }
 
-/** Splits "text | text || text" into segments with the pause that follows each one. */
-export function parseScript(text: string): { say: string; gap: number }[] {
-  const out: { say: string; gap: number }[] = [];
-  const parts = text.split(/(\|\|?)/);
-  for (let i = 0; i < parts.length; i += 2) {
-    const say = parts[i].trim();
-    const sep = parts[i + 1];
-    if (say) out.push({ say, gap: sep === "||" ? 1400 : sep === "|" ? 650 : 0 });
-  }
-  return out;
-}
+export const parseScript = segmentsOf;
 export const plain = (text: string) => text.replace(/\s*\|\|?\s*/g, " ").replace(/\.\.\.\s*/g, "… ").replace(/\s+/g, " ").trim();
+
+// ---- recorded clips (optional). A manifest per language lists the clips that exist; anything missing is spoken by the device voice.
+type Manifest = Record<string, string>;
+const manifests = new Map<Lang, Manifest | null>();
+const loading = new Map<Lang, Promise<void>>();
+export function preloadClips(lang: Lang): Promise<void> {
+  if (!loading.has(lang)) {
+    loading.set(
+      lang,
+      fetch(`/narration/${lang}/manifest.json`, { cache: "no-cache" })
+        .then((r) => (r.ok ? (r.json() as Promise<Manifest>) : {}))
+        .catch(() => ({}))
+        .then((m) => void manifests.set(lang, m && typeof m === "object" ? (m as Manifest) : {})),
+    );
+  }
+  return loading.get(lang)!;
+}
+if (typeof window !== "undefined") (window as unknown as { __mgmClipId: typeof clipId }).__mgmClipId = clipId; // lets browser tests compute clip names
 
 const MOOD: Partial<Record<Cue, Mood>> = {
   deal: "night", night: "night", mafia: "night", doctor: "night", detective: "night",
@@ -77,9 +92,18 @@ export function useNarrator(view: ClientView | null) {
     return ambience.current;
   };
 
-  const speak = useCallback((text: string, myRun: number, onDone?: () => void) => {
+  const clip = useRef<HTMLAudioElement | null>(null);
+  const stopSpeech = useCallback(() => {
+    if (speechSupported) window.speechSynthesis.cancel();
+    clip.current?.pause();
+    clip.current = null;
+  }, []);
+
+  /** Speak one line: recorded clips where they exist, the device voice for the rest (names, anything not recorded). */
+  const speak = useCallback((text: string, lang: Lang, myRun: number, onDone?: () => void) => {
     const segs = parseScript(text);
-    const voice = bestVoice(window.speechSynthesis.getVoices());
+    const voice = speechSupported ? bestVoice(window.speechSynthesis.getVoices(), lang) : undefined;
+    const bcp47 = LANGS.find((l) => l.id === lang)?.bcp47 ?? "en-GB";
     let i = 0;
     const next = () => {
       if (run.current !== myRun) return;
@@ -89,29 +113,44 @@ export function useNarrator(view: ClientView | null) {
         return;
       }
       const seg = segs[i++];
-      const u = new SpeechSynthesisUtterance(seg.say);
-      if (voice) u.voice = voice;
-      u.rate = RATE;
-      u.pitch = PITCH;
-      u.volume = 1;
       const after = () => setTimeout(next, seg.gap);
-      u.onend = after;
-      u.onerror = after;
       amb().duck(true);
-      window.speechSynthesis.speak(u);
+      const tts = () => {
+        if (!speechSupported) return after();
+        const u = new SpeechSynthesisUtterance(seg.say);
+        if (voice) u.voice = voice;
+        u.lang = voice?.lang ?? bcp47;
+        u.rate = RATE;
+        u.pitch = PITCH;
+        u.volume = 1;
+        u.onend = after;
+        u.onerror = after;
+        window.speechSynthesis.speak(u);
+      };
+      const file = manifests.get(lang)?.[clipId(lang, seg.say)];
+      if (!file) return tts();
+      const audio = new Audio(`/narration/${lang}/${file}`);
+      clip.current = audio;
+      audio.onended = after;
+      audio.onerror = tts; // a missing or broken file falls back to the device voice
+      audio.play().catch(tts);
     };
     next();
   }, []);
 
   const viewRef = useRef(view);
   viewRef.current = view;
+  const language = view?.settings.language ?? "en";
+  useEffect(() => {
+    if (on) void preloadClips(language);
+  }, [on, language]);
 
   /** Speak lines one after another, with their music and sound cues. A newer call replaces an older one. */
   const playLines = useCallback((lines: ClientView["lines"], opts: { stings?: boolean } = {}) => {
     const stings = opts.stings ?? true;
     const a = amb();
     const myRun = ++run.current;
-    if (speechSupported) window.speechSynthesis.cancel();
+    stopSpeech();
     let idx = 0;
     const playNext = () => {
       if (run.current !== myRun || idx >= lines.length) return;
@@ -120,11 +159,10 @@ export function useNarrator(view: ClientView | null) {
       if (mood) a.setMood(mood);
       const sting = line.cue ? STING[line.cue] : undefined;
       if (sting && stings) a.sting(sting);
-      if (speechSupported) speak(line.text, myRun, () => setTimeout(playNext, 400));
-      else setTimeout(playNext, 400);
+      speak(line.text, line.lang ?? "en", myRun, () => setTimeout(playNext, 400));
     };
     playNext();
-  }, [speak]);
+  }, [speak, stopSpeech]);
 
   // React to new narration lines. Every new line is played in order, so a slow refresh never swallows the middle of a night.
   useEffect(() => {
@@ -144,11 +182,11 @@ export function useNarrator(view: ClientView | null) {
   useEffect(() => {
     if (view !== null) return;
     run.current++;
-    if (speechSupported) window.speechSynthesis.cancel();
+    stopSpeech();
     ambience.current?.duck(false);
     ambience.current?.stop();
     setOn(false);
-  }, [view]);
+  }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Closing the tab or navigating away also stops the voice, which would otherwise finish its sentence.
   useEffect(() => {
@@ -173,6 +211,8 @@ export function useNarrator(view: ClientView | null) {
     const v = viewRef.current;
     const current = v?.lines.at(-1);
     if (current) lastSeq.current = current.seq; // the effect must not repeat it
+    unlockAudioElements(); // inside the tap, so later clips are allowed to play
+    void preloadClips(v?.settings.language ?? "en");
     setOn(true);
     if (current) playLines([current], { stings: false });
     await amb().start();
@@ -182,12 +222,23 @@ export function useNarrator(view: ClientView | null) {
 
   const disable = useCallback(() => {
     run.current++;
-    if (speechSupported) window.speechSynthesis.cancel();
+    stopSpeech();
     ambience.current?.stop();
     setOn(false);
-  }, []);
+  }, [stopSpeech]);
 
   return { on, enable, disable, supported: speechSupported };
+}
+
+/** Browsers (iPhone especially) only let a page play audio files after one has been started by a tap. */
+function unlockAudioElements() {
+  try {
+    const a = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=");
+    a.volume = 0;
+    void a.play().catch(() => {});
+  } catch {
+    /* optional */
+  }
 }
 
 export async function keepAwake() {

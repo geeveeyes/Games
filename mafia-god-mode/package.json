@@ -14,6 +14,8 @@
     "e2e:narrator": "node e2e/narrator-midgame.mjs",
     "e2e:reliability": "node e2e/reliability.mjs",
     "e2e:invite": "node e2e/invite.mjs",
+    "e2e:clips": "node e2e/clips.mjs",
+    "narration": "tsx scripts/generate-narration.ts",
     "build:api": "node scripts-bundle-api.mjs"
   },
   "dependencies": {

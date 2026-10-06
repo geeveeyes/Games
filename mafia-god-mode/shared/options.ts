@@ -1,6 +1,7 @@
 // Every choice the lobby offers. The UI renders from these lists and the tests try every value,
 // so a control can never offer something the engine rejects.
 import type { Mode, Visibility, VoteStyle } from "./game";
+export { LANG_IDS, LANGS } from "./script";
 
 export const MODE_IDS: Mode[] = ["table", "phones", "remote"];
 export const VOTE_STYLE_IDS: VoteStyle[] = ["trial", "quick"];

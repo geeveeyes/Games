@@ -26,6 +26,10 @@ Script lives in `shared/game.ts` (`narrate(text, cue)`; `|` = short pause, `||` 
 
 `shared/feedback.ts` (validation, rate limit, CSV), `functions/feedback.ts` (route), `src/Feedback.tsx` (form), `src/Admin.tsx` (`/#admin`). Redis list `mgm:feedback`; `docs/feedback.sql` is the SQL target. Needs `FEEDBACK_ADMIN_KEY` in Vercel to read entries. Browser test: `e2e/feedback.mjs`. `npm run build:api` bundles both `api/room.js` and `api/feedback.js`.
 
+## Narration script and clips
+
+`shared/script.ts` holds every narrated line in English/Hindi/Tamil (`say`, `spokenTime`, `segmentsOf`). `shared/clips.ts` names recordable segments; `scripts/generate-narration.ts` records them; `src/narrator.ts` plays clip-or-TTS per segment and picks a voice per language. Hindi/Tamil need native review. Details in `docs/NARRATION.md`. Remember to restart the dev API after engine changes before running browser tests.
+
 ## Narrator lifecycle
 
 Turning the narrator on mid-game: `enable()` speaks the latest line immediately (synchronously in the tap, which iOS needs), sets the music for the current phase, and records `lastSeq` so the line is not repeated. `e2e/narrator-midgame.mjs` stubs speech and checks this.

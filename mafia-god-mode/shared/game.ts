@@ -1,3 +1,5 @@
+import { type Lang, LANG_IDS, roleWord, say, spokenTime, wereWord } from "./script";
+
 // Pure game engine for Mafia God Mode. No timers, no I/O: the server owns time.
 // Every secret (roles, night picks, detective results) stays in this object;
 // `viewFor` is the only way state leaves it.
@@ -27,6 +29,7 @@ export interface Settings {
   defenseSec: number;
   visibility: Visibility;
   roomName: string;
+  language: Lang; // language of the narrator
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -44,6 +47,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defenseSec: 30,
   visibility: "private",
   roomName: "",
+  language: "en",
 };
 
 const clampN = (n: number, lo: number, hi: number, fallback: number) => (Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : fallback);
@@ -72,6 +76,7 @@ export function normalizeSettings(input: Partial<Record<keyof Settings, unknown>
     defenseSec: clampN(Number(raw.defenseSec ?? d.defenseSec), 15, 120, d.defenseSec),
     visibility: oneOf(raw.visibility, ["open", "ask", "private"], d.visibility),
     roomName: String(raw.roomName ?? d.roomName).replace(/\s+/g, " ").trim().slice(0, 30),
+    language: oneOf(raw.language, LANG_IDS, d.language),
   };
 }
 
@@ -114,6 +119,7 @@ export interface Line {
   seq: number;
   text: string;
   cue: Cue | null;
+  lang?: Lang; // language the line was written in (older saved rooms have none: English)
 }
 
 export interface Note {
@@ -208,8 +214,12 @@ export class Game {
     return this.players.filter((p) => p.alive && (!role || p.role === role));
   }
   private narrate(text: string, cue: Cue | null = null) {
-    this.lines.push({ seq: ++this.seq, text, cue });
+    this.lines.push({ seq: ++this.seq, text, cue, lang: this.settings.language });
     if (this.lines.length > 40) this.lines.shift();
+  }
+  /** One line of narration in the room's language. */
+  private t(key: string, vars: Record<string, string | number> = {}): string {
+    return say(this.settings.language, key, vars, (xs) => this.pick(xs));
   }
   private pick<T>(options: T[]): T {
     return options[Math.floor(this.rng() * options.length)];
@@ -366,6 +376,7 @@ export class Game {
     if (bad(patch.mode, ["table", "phones", "remote"])) return fail("Unknown mode.");
     if (bad(patch.voteStyle, ["trial", "quick"])) return fail("Unknown voting style.");
     if (bad(patch.visibility, ["open", "ask", "private"])) return fail("Unknown room visibility.");
+    if (bad(patch.language, LANG_IDS)) return fail("Unknown narrator language.");
     this.settings = normalizeSettings({ ...this.settings, ...patch });
     return ok();
   }
@@ -393,7 +404,7 @@ export class Game {
     this.lastSaved = null;
     this.lines = [];
     this.phase = "reveal";
-    this.narrate("Look at your phone. | Your role is for your eyes only. || Keep it secret.", "deal");
+    this.narrate(this.t("deal"), "deal");
     return ok();
   }
 
@@ -423,46 +434,18 @@ export class Game {
     this.votes = {};
     this.talk = [];
     this.lastResult = null;
-    this.narrate(
-      this.classic()
-        ? this.pick([
-            "Night falls on the village. || Everyone... close your eyes. | Keep them closed. | No peeking.",
-            "The sun sets... | and the village falls silent. || Everyone, close your eyes.",
-            "Darkness settles over the village. || Close your eyes, everyone. | Do not open them until I say so.",
-          ])
-        : "Night falls on the village. | Night roles, check your phones.",
-      "night",
-    );
+    this.narrate(this.t(this.classic() ? "night.classic" : "night.remote"), "night");
     this.announceStep(null);
   }
 
   private announceStep(prev: NightStep | null) {
     const step = this.steps[this.stepIdx];
-    const label = { mafia: "Mafia", doctor: "Doctor", detective: "Detective" } as const;
-    const open = {
-      mafia: [
-        "Mafia... open your eyes. | Find your partners in the dark. || Choose... who will not see the morning.",
-        "Mafia... wake up. | Silently agree on your victim.",
-      ],
-      doctor: [
-        "Doctor... open your eyes. | Who will you protect tonight?",
-        "Doctor... wake up. | Choose someone to save from the dark.",
-      ],
-      detective: [
-        "Detective... open your eyes. | Whose secret do you wish to uncover?",
-        "Detective... wake up. | Choose someone to investigate.",
-      ],
-    } as const;
-    const remote = {
-      mafia: "Mafia, it is your turn. | Agree on a victim.",
-      doctor: "Doctor, it is your turn. | Choose someone to save.",
-      detective: "Detective, it is your turn. | Choose someone to investigate.",
-    } as const;
+    const lang = this.settings.language;
     if (this.classic()) {
-      const close = prev ? `${label[prev]}... close your eyes. || ` : "";
-      this.narrate(close + this.pick([...open[step]]), step);
+      const close = prev ? this.t("close", { role: roleWord(lang, prev) }) + " || " : "";
+      this.narrate(close + this.t(`open.${step}`), step);
     } else {
-      this.narrate(remote[step], step);
+      this.narrate(this.t(`remote.${step}`), step);
     }
   }
 
@@ -530,7 +513,7 @@ export class Game {
     if (this.stepIdx < this.steps.length) {
       this.announceStep(step);
     } else {
-      if (this.classic()) this.narrate(`${{ mafia: "Mafia", doctor: "Doctor", detective: "Detective" }[step]}... close your eyes.`, "night");
+      if (this.classic()) this.narrate(this.t("close", { role: roleWord(this.settings.language, step) }), "night");
       this.resolveNight();
     }
   }
@@ -555,15 +538,9 @@ export class Game {
     if (victim) victim.alive = false;
     this.lastNightDeathId = victim?.id ?? null;
     this.phase = "dawn";
-    const open = this.classic() ? "The sun rises. || Everyone... open your eyes. || " : "The sun rises. || ";
-    const role = victim && this.settings.revealRoleOnDeath ? ` | They were ${article(victim.role!)}.` : "";
-    this.narrate(
-      open +
-        (victim
-          ? `Sadly... | ${victim.name} | was killed in the night.${role}`
-          : this.pick(["And miraculously... | nobody died tonight.", "The village wakes... | and everyone is still alive."])),
-      victim ? "dawn-death" : "dawn",
-    );
+    const open = this.t(this.classic() ? "dawn.open.classic" : "dawn.open.remote");
+    const role = victim && this.settings.revealRoleOnDeath ? this.t("dawn.role", { were: wereWord(this.settings.language, victim.role!) }) : "";
+    this.narrate(open + (victim ? this.t("dawn.death", { name: victim.name }) + role : this.t("dawn.none")), victim ? "dawn-death" : "dawn");
     this.checkWin();
   }
 
@@ -571,7 +548,7 @@ export class Game {
   startDay() {
     if (this.phase !== "dawn") return;
     this.phase = "day";
-    this.narrate(`The village gathers. | Someone among you is lying. || Discuss. | You have ${spoken(this.settings.dayTimerSec)}.`, "day");
+    this.narrate(this.t("day", { time: spokenTime(this.settings.language, this.settings.dayTimerSec) }), "day");
   }
 
   startVote() {
@@ -582,10 +559,10 @@ export class Game {
     this.defenseIdx = 0;
     if (this.settings.voteStyle === "trial") {
       this.voteStage = "poll";
-      this.narrate("Time is up. || Who do you suspect? | Cast your first vote. | It only decides who must defend themselves.", "vote");
+      this.narrate(this.t("vote.trial"), "vote");
     } else {
       this.voteStage = "final";
-      this.narrate("Time is up. || Point at the one you suspect... | and cast your vote.", "vote");
+      this.narrate(this.t("vote.quick"), "vote");
     }
   }
 
@@ -631,12 +608,12 @@ export class Game {
     let eliminated: Player | null = null;
     let text: string;
     if (leaders.length !== 1 || leaders[0] === "skip") {
-      text = leaders.length > 1 ? "The village is divided. | Nobody is eliminated." : "The village chooses to wait. | Nobody is eliminated.";
+      text = this.t(leaders.length > 1 ? "tie.divided" : "tie.wait");
     } else {
       eliminated = this.player(leaders[0])!;
       eliminated.alive = false;
-      const role = this.settings.revealRoleOnDeath ? ` || They were ${article(eliminated.role!)}.` : "";
-      text = `${eliminated.name}... | the village has spoken. || You are eliminated, with ${top} vote${top === 1 ? "" : "s"}.${role}`;
+      const role = this.settings.revealRoleOnDeath ? this.t("elim.role", { were: wereWord(this.settings.language, eliminated.role!) }) : "";
+      text = this.t("elim", { name: eliminated.name, votes: this.t(top === 1 ? "votes.one" : "votes.many", { n: top }) }) + role;
     }
     this.lastResult = { text, eliminatedId: eliminated?.id ?? null };
     this.phase = "result";
@@ -649,7 +626,7 @@ export class Game {
     const skips = counts.skip ?? 0;
     const ranked = Object.entries(counts).filter(([id]) => id !== "skip").sort((a, b) => b[1] - a[1]);
     if (!ranked.length || ranked[0][1] <= skips) {
-      this.lastResult = { text: "The village cannot agree on anyone. | Nobody is accused.", eliminatedId: null };
+      this.lastResult = { text: this.t("noaccuse"), eliminatedId: null };
       this.phase = "result";
       this.narrate(this.lastResult.text, "noelim");
       return;
@@ -667,16 +644,13 @@ export class Game {
     this.defenseIdx = 0;
     this.phase = "defense";
     const names = chosen.map((id) => this.player(id)!.name);
-    const intro = names.length === 2 ? `${names[0]}... | and ${names[1]}. || You stand accused.` : `${names[0]}... | you stand accused.`;
-    this.narrate(`The first votes are in. || ${intro} || ${this.defenseCall(0)}`, "defense");
+    const intro = names.length === 2 ? this.t("defense.two", { a: names[0], b: names[1] }) : this.t("defense.one", { a: names[0] });
+    this.narrate(this.t("defense.start", { intro, call: this.defenseCall(0) }), "defense");
   }
 
   private defenseCall(i: number) {
     const name = this.player(this.defendants[i])!.name;
-    const t = spoken(this.settings.defenseSec);
-    return i === 0
-      ? `${name}... | the floor is yours. | You have ${t} to defend yourself.`
-      : `Now... | ${name}. | Your turn. | You have ${t} to defend yourself.`;
+    return this.t(i === 0 ? "defense.first" : "defense.next", { name, time: spokenTime(this.settings.language, this.settings.defenseSec) });
   }
 
   /** Move to the next defender, or to the final vote after the last one. */
@@ -690,15 +664,15 @@ export class Game {
     this.phase = "vote";
     this.voteStage = "final";
     this.votes = {};
-    this.narrate("The defenses are done. || Now... | cast your final vote. | Who will be eliminated?", "final");
+    this.narrate(this.t("final"), "final");
   }
 
   // ---------- end ----------
   private checkWin() {
     const mafia = this.alive("mafia").length;
     const town = this.alive().length - mafia;
-    if (mafia === 0) this.finish("town", "The last Mafia is gone. || The Town wins!", "win-town");
-    else if (mafia >= town) this.finish("mafia", "Darkness settles over the village for good. || The Mafia wins.", "win-mafia");
+    if (mafia === 0) this.finish("town", this.t("win.town"), "win-town");
+    else if (mafia >= town) this.finish("mafia", this.t("win.mafia"), "win-mafia");
   }
   private finish(w: Winner, text: string, cue: Cue) {
     this.winner = w;
@@ -798,12 +772,4 @@ export type GameView = ReturnType<Game["viewFor"]>;
 
 function clamp(n: number, lo: number, hi: number) {
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : lo;
-}
-function spoken(sec: number) {
-  if (sec < 60) return `${sec} seconds`;
-  const m = Math.round(sec / 60);
-  return `${m} minute${m === 1 ? "" : "s"}`;
-}
-function article(role: Role) {
-  return role === "mafia" ? "a Mafia member" : role === "villager" ? "a Villager" : `the ${role[0].toUpperCase()}${role.slice(1)}`;
 }

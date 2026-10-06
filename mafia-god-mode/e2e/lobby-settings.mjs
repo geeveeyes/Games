@@ -36,7 +36,7 @@ async function exercise(label, page) {
     for (let k = 0; k < 2; k++) { await boxes.nth(i).click(); await check(`checkbox #${i}`); n++; }
   }
   // selects: pick every option
-  for (const sel of ["#mafia", "#day", "#defense", "#vote"]) {
+  for (const sel of ["#mafia", "#day", "#defense", "#vote", "#lang"]) {
     const el = page.locator(sel);
     if (!(await el.count())) continue;
     for (const value of await el.locator("option").evaluateAll((os) => os.map((o) => o.value))) {

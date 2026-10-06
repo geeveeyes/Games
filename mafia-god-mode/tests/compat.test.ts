@@ -44,9 +44,10 @@ describe("rooms saved by older versions", () => {
       const { call } = await storeWith(oldLobby(settings, newer));
       const v = await call({ action: "poll", code: "OLDX", token: "host" });
       if (!v.ok) throw new Error(v.error);
-      for (const key of ["mode", "voteStyle", "defenseSec", "visibility", "roomName", "dayTimerSec", "voteTimerSec"]) {
+      for (const key of ["mode", "voteStyle", "defenseSec", "visibility", "roomName", "dayTimerSec", "voteTimerSec", "language"]) {
         expect(v.view.settings, `missing ${key}`).toHaveProperty(key);
       }
+      expect(v.view.settings.language).toBe("en"); // settings saved before narrator languages existed
       expect(v.view.talk).toEqual([]);
       expect(v.view.pending).toEqual([]);
       await call({ action: "addBot", code: "OLDX", token: "host", count: 2 });

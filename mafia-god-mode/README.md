@@ -7,7 +7,7 @@ The app deals secret roles, speaks the night script, collects each private actio
 ## How it works
 
 - **Phones** are each player's private channel: role card, night action, vote.
-- **Narrator** speaks a slow, theatrical script with timed pauses, in a UK male voice ("Google UK English Male" when the device has it, otherwise the best English voice available) at normal speed and the lowest pitch. Generated ambient music (night drone and distant howls, daylight chimes, a heartbeat during votes, plus sound cues for dawn, a death and the win) plays at 60% and ducks under the voice. Everything is synthesized in the browser, with no audio files. There is one on/off button, and it must be tapped once because browsers block sound until then. Use it on one device (the TV or the host's phone).
+- **Narrator** speaks a slow, theatrical script with timed pauses, in English, Hindi or Tamil (the host picks in the lobby). It plays pre-recorded clips when they exist and otherwise uses the device's voice (a UK male voice for English when available). Generated ambient music (night drone and distant howls, daylight chimes, a heartbeat during votes, plus sound cues for dawn, a death and the win) plays at 60% and ducks under the voice. There is one on/off button, and it can be switched on at any point in a game. See [docs/NARRATION.md](docs/NARRATION.md) for recording clips and for the language notes.
 - **Table screen** (optional): open the site on a TV or laptop, enter the room code, and choose **Show on TV**.
 - **Modes** (chosen in the lobby): in person with a TV, in person phones-only, or remote on a video call (no eyes-closed step).
 
@@ -66,7 +66,7 @@ One person plus bots can play a full game: `npm run e2e:solo`.
 ## Tests
 
 - `npm test`: engine, bots, rooms, feedback, Redis protocol, **saved-room compatibility** (rooms saved by older versions still load and work) and **every lobby setting**.
-- Browser tests (need Chromium; start `MGM_FAST=1 MGM_SEED_OLD_ROOM=1 npx tsx dev-server.ts` and `npx vite`): `npm run e2e` (5 players + TV), `e2e:solo` (one person + bots, also checks audio stops on leaving and chat typing), `e2e:settings` (every lobby control, fresh and old-format room), `e2e:typing` (text boxes keep focus while the room refreshes), `e2e:invite` (QR decodes to the link, link joins, TV link, installable files; needs `vite preview` on :4173), `e2e:reliability` (offline banner, host handover, taking a seat back; start the API with `MGM_HEARTBEAT_MS=1000 MGM_AWAY_MS=4000`), `e2e:narrator` (turning the narrator on mid-game speaks immediately and starts the music).
+- Browser tests (need Chromium; start `MGM_FAST=1 MGM_SEED_OLD_ROOM=1 npx tsx dev-server.ts` and `npx vite`): `npm run e2e` (5 players + TV), `e2e:solo` (one person + bots, also checks audio stops on leaving and chat typing), `e2e:settings` (every lobby control, fresh and old-format room), `e2e:typing` (text boxes keep focus while the room refreshes), `e2e:clips` (recorded clips play, names fall back to the device voice, Hindi narration), `e2e:invite` (QR decodes to the link, link joins, TV link, installable files; needs `vite preview` on :4173), `e2e:reliability` (offline banner, host handover, taking a seat back; start the API with `MGM_HEARTBEAT_MS=1000 MGM_AWAY_MS=4000`), `e2e:narrator` (turning the narrator on mid-game speaks immediately and starts the music).
 
 ## Run locally
 

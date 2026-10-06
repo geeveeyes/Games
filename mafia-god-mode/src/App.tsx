@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { Mode, Role, Settings, Visibility, VoteStyle } from "../shared/game";
-import { DAY_SECONDS, DEFENSE_SECONDS, MAFIA_COUNTS, MODE_IDS, VISIBILITY_IDS, VOTE_SECONDS, VOTE_STYLE_IDS } from "../shared/options";
+import { DAY_SECONDS, DEFENSE_SECONDS, LANGS, MAFIA_COUNTS, MODE_IDS, VISIBILITY_IDS, VOTE_SECONDS, VOTE_STYLE_IDS } from "../shared/options";
 import type { ClientView, RoomSummary } from "../shared/room";
 import { call, callRooms, loadSession, playerToken, saveName, saveSession, savedName, useRoom, type Session } from "./api";
 import { keepAwake, plain, useNarrator } from "./narrator";
@@ -720,6 +720,11 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
               </select>
             </label>
           )}
+          <label className="field"><span>Narrator language</span>
+            <select id="lang" value={s.language} disabled={!host} onChange={(e) => set({ language: e.target.value as Settings["language"] })}>
+              {LANGS.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+            </select>
+          </label>
           <label className="field"><span>Voting</span>
             <select id="vote" value={s.voteTimerSec} disabled={!host} onChange={(e) => set({ voteTimerSec: Number(e.target.value) })}>
               {VOTE_SECONDS.map((k) => <option key={k} value={k}>{k} sec</option>)}
