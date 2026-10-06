@@ -29,6 +29,12 @@ Every screen has a **Feedback** button (and the end-of-game screen asks "How was
 - **Reading it:** open `/#admin`, enter the admin key, and filter by theme or download a CSV. Or call `GET /api/feedback` (JSON) / `?format=csv` with `Authorization: Bearer <key>`.
 - **Set the key:** add an environment variable `FEEDBACK_ADMIN_KEY` in Vercel (at least 12 characters, random). Without it the read endpoint stays disabled, and sending feedback still works.
 
+## Joining and installing
+
+- **Invite link and QR code:** every lobby shows a QR code and a link (`/?room=ABCD`) with Copy and, on phones, Share. Opening the link shows the room name and host and joins in one step.
+- **TV link:** `/?tv=ABCD` opens the shared screen directly, with a QR code for latecomers.
+- **Install as an app:** the site ships a web app manifest, icons and a small service worker, so phones can add it to the home screen and it opens full-screen (Chrome shows an **Install** button; on iPhone use Share, then Add to Home Screen). Game traffic is never cached, so a new deploy shows up immediately.
+
 ## Staying connected
 
 - A phone that sleeps or loses signal shows a "Reconnecting" banner, retries with a gentle back-off, and catches up the moment it is back. Players keep their seat because the browser remembers who they are.
@@ -60,7 +66,7 @@ One person plus bots can play a full game: `npm run e2e:solo`.
 ## Tests
 
 - `npm test`: engine, bots, rooms, feedback, Redis protocol, **saved-room compatibility** (rooms saved by older versions still load and work) and **every lobby setting**.
-- Browser tests (need Chromium; start `MGM_FAST=1 MGM_SEED_OLD_ROOM=1 npx tsx dev-server.ts` and `npx vite`): `npm run e2e` (5 players + TV), `e2e:solo` (one person + bots, also checks audio stops on leaving and chat typing), `e2e:settings` (every lobby control, fresh and old-format room), `e2e:typing` (text boxes keep focus while the room refreshes), `e2e:reliability` (offline banner, host handover, taking a seat back; start the API with `MGM_HEARTBEAT_MS=1000 MGM_AWAY_MS=4000`), `e2e:narrator` (turning the narrator on mid-game speaks immediately and starts the music).
+- Browser tests (need Chromium; start `MGM_FAST=1 MGM_SEED_OLD_ROOM=1 npx tsx dev-server.ts` and `npx vite`): `npm run e2e` (5 players + TV), `e2e:solo` (one person + bots, also checks audio stops on leaving and chat typing), `e2e:settings` (every lobby control, fresh and old-format room), `e2e:typing` (text boxes keep focus while the room refreshes), `e2e:invite` (QR decodes to the link, link joins, TV link, installable files; needs `vite preview` on :4173), `e2e:reliability` (offline banner, host handover, taking a seat back; start the API with `MGM_HEARTBEAT_MS=1000 MGM_AWAY_MS=4000`), `e2e:narrator` (turning the narrator on mid-game speaks immediately and starts the music).
 
 ## Run locally
 

@@ -157,3 +157,13 @@ textarea { font: 1rem var(--body); padding: 12px; border-radius: 8px; border: 1p
 .chip.mk { margin-left: auto; font-size: .62rem; padding: 2px 8px; }
 .chip.mk + .rtag, .chip.mk + .x { margin-left: 8px; }
 .offline { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--blood); border-radius: 8px; color: var(--blood); font-size: .9rem; }
+
+.qr { display: block; margin-inline: auto; background: #fff; border-radius: 10px; padding: 6px; image-rendering: pixelated; }
+.invite { align-items: stretch; }
+.linkfield { font: .85rem var(--mono); padding: 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); width: 100%; }
+.tvlink summary { cursor: pointer; color: var(--lamp); font-size: .9rem; }
+.tvlink[open] { display: flex; flex-direction: column; gap: 8px; }
+.invitecard { display: flex; flex-direction: column; gap: 4px; padding: 14px; border: 1px solid var(--lamp); border-radius: 10px; background: color-mix(in srgb, var(--lamp) 10%, var(--panel)); }
+.invitecard b { font-family: var(--display); text-transform: uppercase; letter-spacing: .05em; font-size: 1.4rem; }
+.tvjoin { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.tvjoin .qr { margin: 0; }

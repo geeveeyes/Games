@@ -5,6 +5,8 @@ import type { ClientView, RoomSummary } from "../shared/room";
 import { call, callRooms, loadSession, playerToken, saveName, saveSession, savedName, useRoom, type Session } from "./api";
 import { keepAwake, plain, useNarrator } from "./narrator";
 import { Admin } from "./Admin";
+import { inviteUrl, readInvite, tvUrl } from "./invite";
+import { QrCode, ShareBar, useInstall } from "./Invite";
 import { FeedbackModal, type FeedbackContext } from "./Feedback";
 import { RulesModal } from "./Rules";
 
@@ -26,6 +28,7 @@ export function App() {
   }, []);
   const room = useRoom(session, leave);
   const narrator = useNarrator(room.view);
+  const [invite] = useState(() => readInvite(location.search));
   const [rules, setRules] = useState(false);
   const [feedback, setFeedback] = useState(false);
   const [admin, setAdmin] = useState(() => location.hash === "#admin");
@@ -42,6 +45,7 @@ export function App() {
   const enter = (s: Session) => {
     saveSession(s);
     setSession(s);
+    if (location.search) history.replaceState(null, "", location.pathname + location.hash); // the invite has done its job
   };
 
   const fbContext: FeedbackContext = room.view
@@ -64,7 +68,7 @@ export function App() {
   if (!session || !room.view) {
     return (
       <Shell onRules={() => setRules(true)} onFeedback={() => setFeedback(true)}>
-        {session ? <p className="muted center">Connecting to room {session.code}…</p> : <Home onEnter={enter} onRules={() => setRules(true)} />}
+        {session ? <p className="muted center">Connecting to room {session.code}…</p> : <Home onEnter={enter} onRules={() => setRules(true)} invite={invite} />}
         {rules && <RulesModal onClose={() => setRules(false)} />}
         {feedback && <FeedbackModal onClose={() => setFeedback(false)} context={fbContext} />}
         {session && room.error && (
@@ -119,9 +123,11 @@ function Shell({ children, code, right, onRules, onFeedback }: { children: React
 /** A game that has started only lets its own players back in, by the same name. */
 const joinHint = (e: string) => (/already started/.test(e) ? `${e} Were you playing? Enter the same name you used before to take your seat back.` : e);
 const MODE_LABEL: Record<string, string> = { table: "TV or laptop", phones: "Phones only", remote: "Remote" };
-function Home({ onEnter, onRules }: { onEnter: (s: Session) => void; onRules: () => void }) {
+function Home({ onEnter, onRules, invite }: { onEnter: (s: Session) => void; onRules: () => void; invite: { room?: string; tv?: string } }) {
   const [name, setName] = useState(savedName());
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(invite.room ?? "");
+  const install = useInstall();
+  const [invited, setInvited] = useState<{ name: string; host: string; players: number; started: boolean } | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -157,6 +163,25 @@ function Home({ onEnter, onRules }: { onEnter: (s: Session) => void; onRules: ()
       r.ok ? onEnter({ code: r.code, mode: "player" }) : setErr(joinHint(r.error));
     });
 
+  // An invite link: show whose room it is, and a TV link goes straight to the shared screen.
+  useEffect(() => {
+    if (invite.tv) {
+      void watch(invite.tv);
+      return;
+    }
+    if (!invite.room) return;
+    let live = true;
+    call({ action: "watch", code: invite.room }).then((r) => {
+      if (!live) return;
+      if (!r.ok) return setErr(r.status === 404 ? "That room is not open any more. Ask for a new link." : r.error);
+      const v = r.view;
+      setInvited({ name: v.settings.roomName || "Game room", host: v.players.find((p) => p.id === v.hostId)?.name ?? "the host", players: v.players.length, started: v.phase !== "lobby" });
+    });
+    return () => {
+      live = false;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [rooms, setRooms] = useState<RoomSummary[] | null>(null);
   useEffect(() => {
     let live = true;
@@ -177,6 +202,18 @@ function Home({ onEnter, onRules }: { onEnter: (s: Session) => void; onRules: ()
 
   return (
     <div className="stack gap-lg">
+      {invite.room && invited && (
+        <div className="invitecard">
+          <span className="tag">You are invited</span>
+          <b>{invited.name}</b>
+          <span className="muted small">Host {invited.host} · {invited.players} {invited.players === 1 ? "player" : "players"} so far</span>
+          {invited.started ? (
+            <p className="muted small">This game has started. If you were playing, enter the same name to take your seat back.</p>
+          ) : (
+            <p className="muted small">Enter your name and tap Join game.</p>
+          )}
+        </div>
+      )}
       <div className="stack">
         <h1>Everyone plays.<br />Nobody narrates.</h1>
         <p className="muted">The app deals roles, speaks the night script, and counts votes. Open this page on every phone.</p>
@@ -214,6 +251,8 @@ function Home({ onEnter, onRules }: { onEnter: (s: Session) => void; onRules: ()
       </div>
       {err && <p className="error" role="alert">{err}</p>}
       <button className="linkbtn" onClick={onRules}>New to Mafia? Read the rules</button>
+      {install.canInstall && <button className="btn ghost" onClick={install.install}>Install the app on this device</button>}
+      {install.showIosHint && <p className="muted small center">On iPhone or iPad: tap Share, then Add to Home Screen.</p>}
     </div>
   );
 }
@@ -579,8 +618,17 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
       <div className="stack">
         <span className="tag">Room code</span>
         <div className="bigcode">{v.code}</div>
-        <p className="muted">Friends open this site and enter the code. For a TV, choose "Show on TV" and enter it there.</p>
+        <p className="muted">Friends can scan the code below, open the link, or enter the room code on the home screen.</p>
       </div>
+      <section className="stack invite" aria-label="Invite people">
+        <QrCode url={inviteUrl(location.origin, v.code)} />
+        <ShareBar url={inviteUrl(location.origin, v.code)} title={v.settings.roomName || "Mafia God Mode"} />
+        <details className="tvlink">
+          <summary>Show the game on a TV</summary>
+          <p className="muted small">Open this link on the TV or laptop. It shows the narration, timer and who is alive.</p>
+          <input className="linkfield" readOnly value={tvUrl(location.origin, v.code)} onFocus={(e) => e.currentTarget.select()} aria-label="TV link" />
+        </details>
+      </section>
       <section className="stack">
         <h3>Players ({n})</h3>
         {host && v.pending.length > 0 && (
@@ -701,7 +749,10 @@ function Display({ v, now, narratorOn, enable }: { v: ClientView; now: () => num
         <p className="tv-say" aria-live="polite">{line}</p>
         {timed && <Timer due={v.due} now={now} />}
         {v.phase === "lobby" && (
-          <p className="muted">Open this site on your phone, choose "Join game" and enter <b className="mono">{v.code}</b>.</p>
+          <div className="tvjoin">
+            <QrCode url={inviteUrl(location.origin, v.code)} size={200} label="Scan to join" />
+            <p className="muted">Scan to join, or open <b className="mono">{location.host}</b> and enter <b className="mono">{v.code}</b>.</p>
+          </div>
         )}
         {v.talk.length > 0 && ["day", "defense", "vote"].includes(v.phase) && (
           <ul className="talklist tv-talk">
