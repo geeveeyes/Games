@@ -57,8 +57,12 @@ export interface RoomData {
   updatedAt: number;
 }
 
-export const HEARTBEAT_MS = 20_000; // write-throttle: keeps Redis traffic low
+// Overridable only so browser tests can shrink them (MGM_HEARTBEAT_MS / MGM_AWAY_MS).
+const envMs = (name: string, fallback: number) => Number(typeof process !== "undefined" ? process.env?.[name] : undefined) || fallback;
+export const HEARTBEAT_MS = envMs("MGM_HEARTBEAT_MS", 20_000); // write-throttle: keeps Redis traffic low
 export const CONNECTED_WINDOW_MS = 50_000;
+/** After this long without a sign of life a person counts as away: their seat can be taken back by name, and the host role can move. */
+export const AWAY_MS = envMs("MGM_AWAY_MS", 60_000);
 
 export function newRoom(code: string, now: number): RoomData {
   return { code, game: new Game().toJSON(), key: "lobby", due: null, seen: {}, updatedAt: now };
@@ -148,6 +152,7 @@ function fire(g: Game) {
 export function tick(room: RoomData, now: number, t: Timing = DEFAULT_TIMING, rng: () => number = Math.random): boolean {
   const g = load(room);
   let changed = false;
+  if (refreshHost(room, g, now)) changed = true;
   if (runBots(room, g, now, t, rng)) {
     changed = true;
     schedule(room, g, now, t, rng);
@@ -163,6 +168,19 @@ export function tick(room: RoomData, now: number, t: Timing = DEFAULT_TIMING, rn
   }
   if (changed) save(room, g, now);
   return changed;
+}
+
+/** If the host has been away for a while and someone else is here, pass the host role on so the game keeps moving. */
+export function refreshHost(room: RoomData, g: Game, now: number): boolean {
+  if (g.phase === "lobby" && g.players.filter((p) => !p.bot).length < 2) return false;
+  const seenAgo = (id: string) => now - (room.seen[id] ?? 0);
+  const host = g.player(g.hostId);
+  if (host && seenAgo(host.id) < AWAY_MS) return false;
+  const candidates = g.players.filter((p) => !p.bot && p.id !== g.hostId && seenAgo(p.id) < AWAY_MS).sort((a, b) => seenAgo(a.id) - seenAgo(b.id));
+  if (!candidates.length) return false;
+  g.hostId = candidates[0].id;
+  save(room, g, now);
+  return true;
 }
 
 // ---------- API ----------
@@ -184,7 +202,8 @@ export type Action =
   | { action: "say"; code: string; token: string; text: string }
   | { action: "admit"; code: string; token: string; target: string }
   | { action: "decline"; code: string; token: string; target: string }
-  | { action: "kick"; code: string; token: string; target: string };
+  | { action: "kick"; code: string; token: string; target: string }
+  | { action: "makeHost"; code: string; token: string; target: string };
 
 export type ApiResponse =
   | { ok: true; code: string; view: ClientView }
@@ -214,9 +233,34 @@ export function applyAction(room: RoomData, a: Action, now: number, t: Timing, r
   let r: Result = { ok: true };
   const token: string = ("token" in a && a.token) || "";
   switch (a.action) {
-    case "join":
-      // In an "ask to join" room, everyone after the host has to be let in.
-      r = g.settings.visibility === "ask" && g.players.length > 0 && !g.player(a.token) ? g.requestJoin(a.token, a.name) : g.addPlayer(a.token, a.name);
+    case "join": {
+      const mine = g.player(a.token);
+      if (!mine && g.phase !== "lobby") {
+        // A game is under way: a returning person (new phone, cleared storage) can take their old seat back by
+        // name, but only once that seat has been quiet for a while, so nobody can grab a seat that is in use.
+        const seat = g.players.find((p) => !p.bot && p.name.toLowerCase() === a.name.trim().toLowerCase());
+        if (seat && now - (room.seen[seat.id] ?? 0) >= AWAY_MS) {
+          const oldId = seat.id;
+          r = g.reclaimSeat(oldId, a.token);
+          if (r.ok) {
+            room.seen[a.token] = now;
+            delete room.seen[oldId];
+          }
+        } else if (seat) {
+          r = { ok: false, error: `${seat.name} is still connected. If that is you on another device, wait a minute and try again.` };
+        } else {
+          r = { ok: false, error: "The game has already started." };
+        }
+      } else if (g.settings.visibility === "ask" && g.players.length > 0 && !mine) {
+        // In an "ask to join" room, everyone after the host has to be let in.
+        r = g.requestJoin(a.token, a.name);
+      } else {
+        r = g.addPlayer(a.token, a.name);
+      }
+      break;
+    }
+    case "makeHost":
+      r = hostOnly(g, token) ?? g.setHost(a.target);
       break;
     case "admit":
       r = hostOnly(g, token) ?? g.admit(a.target);

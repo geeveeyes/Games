@@ -314,6 +314,41 @@ export class Game {
     return ok();
   }
 
+  /** Hand the host role to another person (never a bot). */
+  setHost(id: string): Result {
+    const p = this.player(id);
+    if (!p || p.bot) return fail("Only a person can be the host.");
+    this.hostId = id;
+    return ok();
+  }
+
+  /**
+   * Give an existing seat to a returning person on a new browser token (lost phone, cleared storage).
+   * Every place that remembers the old id is updated, so votes, picks, notes and chat stay with the seat.
+   */
+  reclaimSeat(oldId: string, newId: string): Result {
+    const p = this.player(oldId);
+    if (!p || p.bot) return fail("That seat cannot be taken.");
+    if (this.player(newId)) return fail("You are already in this game.");
+    const swap = (id: string) => (id === oldId ? newId : id);
+    const rekey = <T,>(rec: Record<string, T>) => Object.fromEntries(Object.entries(rec).map(([k, v]) => [swap(k), v]));
+    p.id = newId;
+    p.connected = true;
+    if (this.hostId === oldId) this.hostId = newId;
+    this.notes = rekey(this.notes);
+    this.mafiaPicks = Object.fromEntries(Object.entries(this.mafiaPicks).map(([k, v]) => [swap(k), swap(v)]));
+    this.votes = Object.fromEntries(Object.entries(this.votes).map(([k, v]) => [swap(k), swap(v)]));
+    this.doctorPick = this.doctorPick ? swap(this.doctorPick) : null;
+    this.detectivePick = this.detectivePick ? swap(this.detectivePick) : null;
+    this.lastSaved = this.lastSaved ? swap(this.lastSaved) : null;
+    this.lastNightDeathId = this.lastNightDeathId ? swap(this.lastNightDeathId) : null;
+    this.defendants = this.defendants.map(swap);
+    this.blocked = this.blocked.map(swap);
+    for (const t of this.talk) if (t.id === oldId) t.id = newId;
+    if (this.lastResult?.eliminatedId) this.lastResult.eliminatedId = swap(this.lastResult.eliminatedId);
+    return ok();
+  }
+
   setConnected(id: string, connected: boolean) {
     const p = this.player(id);
     if (p) p.connected = connected;

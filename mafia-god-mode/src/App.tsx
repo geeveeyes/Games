@@ -81,6 +81,12 @@ export function App() {
   const watch = session.mode === "watch";
   return (
     <Shell code={v.code} onRules={() => setRules(true)} onFeedback={() => setFeedback(true)} right={<NarratorControl n={narrator} />}>
+      {room.offline && (
+        <div className="offline" role="status">
+          <span>Reconnecting… your game is safe and you will rejoin automatically.</span>
+          <button className="chip" onClick={room.retry}>Try now</button>
+        </div>
+      )}
       {room.error && <p className="error" role="alert">{room.error}</p>}
       {watch ? (
         <Display v={v} now={room.now} narratorOn={narrator.on} enable={narrator.enable} />
@@ -110,6 +116,8 @@ function Shell({ children, code, right, onRules, onFeedback }: { children: React
 }
 
 // ---------- Home ----------
+/** A game that has started only lets its own players back in, by the same name. */
+const joinHint = (e: string) => (/already started/.test(e) ? `${e} Were you playing? Enter the same name you used before to take your seat back.` : e);
 const MODE_LABEL: Record<string, string> = { table: "TV or laptop", phones: "Phones only", remote: "Remote" };
 function Home({ onEnter, onRules }: { onEnter: (s: Session) => void; onRules: () => void }) {
   const [name, setName] = useState(savedName());
@@ -134,7 +142,7 @@ function Home({ onEnter, onRules }: { onEnter: (s: Session) => void; onRules: ()
       saveName(name);
       const c = code.trim().toUpperCase();
       const r = await call({ action: "join", code: c, token: playerToken(), name });
-      r.ok ? onEnter({ code: r.code, mode: "player" }) : setErr(r.error);
+      r.ok ? onEnter({ code: r.code, mode: "player" }) : setErr(joinHint(r.error));
     });
   const watch = (c = code.trim().toUpperCase()) =>
     run(async () => {
@@ -146,7 +154,7 @@ function Home({ onEnter, onRules }: { onEnter: (s: Session) => void; onRules: ()
       if (!name.trim()) return setErr("Enter your name first, then pick a room.");
       saveName(name);
       const r = await call({ action: "join", code: c, token: playerToken(), name });
-      r.ok ? onEnter({ code: r.code, mode: "player" }) : setErr(r.error);
+      r.ok ? onEnter({ code: r.code, mode: "player" }) : setErr(joinHint(r.error));
     });
 
   const [rooms, setRooms] = useState<RoomSummary[] | null>(null);
@@ -514,15 +522,17 @@ function PlayerScreen({ v, act, now, onLeave, onFeedback }: { v: ClientView; act
   }
 }
 
-function Roster({ players, showRoles, onRemove, hostId }: { players: Player[]; showRoles?: boolean; onRemove?: (id: string) => void; hostId?: string | null }) {
+function Roster({ players, showRoles, onRemove, hostId, onHost, you }: { players: Player[]; showRoles?: boolean; onRemove?: (id: string) => void; hostId?: string | null; onHost?: (id: string) => void; you?: string }) {
   return (
     <div className="roster">
       {players.map((p) => (
         <div key={p.id} className={`prow static ${!p.alive ? "dead" : ""}`}>
           <span className="av">{p.name[0]}</span>
           <span>{p.name}</span>
+          {!p.bot && <span className={`dot ${p.connected ? "on" : "off"}`} title={p.connected ? "Connected" : "Away"} aria-label={p.connected ? "connected" : "away"} />}
           {p.bot && <span className="rtag bot">bot</span>}
           {p.id === hostId && <span className="rtag">host</span>}
+          {onHost && !p.bot && p.id !== hostId && p.id !== you && <button className="chip mk" onClick={() => onHost(p.id)}>Make host</button>}
           {onRemove && p.id !== hostId && <button className="x" aria-label={`Remove ${p.name}`} onClick={() => onRemove(p.id)}>×</button>}
           {(showRoles || p.role) && p.role && <span className="rtag">{ROLE_INFO[p.role].title}</span>}
           {!p.alive && <span className="rtag">out</span>}
@@ -592,6 +602,8 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
           players={v.players.map((p) => ({ ...p, role: null }))}
           onRemove={host ? (id) => act({ action: v.players.find((p) => p.id === id)?.bot ? "removeBot" : "kick", target: id }) : undefined}
           hostId={v.hostId}
+          you={v.you?.id}
+          onHost={host ? (id) => act({ action: "makeHost", target: id }) : undefined}
         />
         {host && (
           <div className="row2">

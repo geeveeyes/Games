@@ -271,6 +271,39 @@ var Game = class _Game {
     if (this.talk.length > 40) this.talk.shift();
     return ok();
   }
+  /** Hand the host role to another person (never a bot). */
+  setHost(id) {
+    const p = this.player(id);
+    if (!p || p.bot) return fail("Only a person can be the host.");
+    this.hostId = id;
+    return ok();
+  }
+  /**
+   * Give an existing seat to a returning person on a new browser token (lost phone, cleared storage).
+   * Every place that remembers the old id is updated, so votes, picks, notes and chat stay with the seat.
+   */
+  reclaimSeat(oldId, newId) {
+    const p = this.player(oldId);
+    if (!p || p.bot) return fail("That seat cannot be taken.");
+    if (this.player(newId)) return fail("You are already in this game.");
+    const swap = (id) => id === oldId ? newId : id;
+    const rekey = (rec) => Object.fromEntries(Object.entries(rec).map(([k, v]) => [swap(k), v]));
+    p.id = newId;
+    p.connected = true;
+    if (this.hostId === oldId) this.hostId = newId;
+    this.notes = rekey(this.notes);
+    this.mafiaPicks = Object.fromEntries(Object.entries(this.mafiaPicks).map(([k, v]) => [swap(k), swap(v)]));
+    this.votes = Object.fromEntries(Object.entries(this.votes).map(([k, v]) => [swap(k), swap(v)]));
+    this.doctorPick = this.doctorPick ? swap(this.doctorPick) : null;
+    this.detectivePick = this.detectivePick ? swap(this.detectivePick) : null;
+    this.lastSaved = this.lastSaved ? swap(this.lastSaved) : null;
+    this.lastNightDeathId = this.lastNightDeathId ? swap(this.lastNightDeathId) : null;
+    this.defendants = this.defendants.map(swap);
+    this.blocked = this.blocked.map(swap);
+    for (const t of this.talk) if (t.id === oldId) t.id = newId;
+    if (this.lastResult?.eliminatedId) this.lastResult.eliminatedId = swap(this.lastResult.eliminatedId);
+    return ok();
+  }
   setConnected(id, connected) {
     const p = this.player(id);
     if (p) p.connected = connected;
@@ -888,8 +921,10 @@ var DEFAULT_TIMING = {
 var INSTANT_TIMING = Object.fromEntries(
   Object.keys(DEFAULT_TIMING).map((k) => [k, 0])
 );
-var HEARTBEAT_MS = 2e4;
+var envMs = (name, fallback) => Number(typeof process !== "undefined" ? process.env?.[name] : void 0) || fallback;
+var HEARTBEAT_MS = envMs("MGM_HEARTBEAT_MS", 2e4);
 var CONNECTED_WINDOW_MS = 5e4;
+var AWAY_MS = envMs("MGM_AWAY_MS", 6e4);
 function newRoom(code, now) {
   return { code, game: new Game().toJSON(), key: "lobby", due: null, seen: {}, updatedAt: now };
 }
@@ -969,6 +1004,7 @@ function fire(g) {
 function tick(room, now, t = DEFAULT_TIMING, rng = Math.random) {
   const g = load(room);
   let changed = false;
+  if (refreshHost(room, g, now)) changed = true;
   if (runBots(room, g, now, t, rng)) {
     changed = true;
     schedule(room, g, now, t, rng);
@@ -985,6 +1021,17 @@ function tick(room, now, t = DEFAULT_TIMING, rng = Math.random) {
   if (changed) save(room, g, now);
   return changed;
 }
+function refreshHost(room, g, now) {
+  if (g.phase === "lobby" && g.players.filter((p) => !p.bot).length < 2) return false;
+  const seenAgo = (id) => now - (room.seen[id] ?? 0);
+  const host = g.player(g.hostId);
+  if (host && seenAgo(host.id) < AWAY_MS) return false;
+  const candidates = g.players.filter((p) => !p.bot && p.id !== g.hostId && seenAgo(p.id) < AWAY_MS).sort((a, b) => seenAgo(a.id) - seenAgo(b.id));
+  if (!candidates.length) return false;
+  g.hostId = candidates[0].id;
+  save(room, g, now);
+  return true;
+}
 var ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 function randomCode(rng = Math.random) {
   return Array.from({ length: 4 }, () => ALPHABET[Math.floor(rng() * ALPHABET.length)]).join("");
@@ -1000,8 +1047,31 @@ function applyAction(room, a, now, t, rng = Math.random) {
   let r = { ok: true };
   const token = "token" in a && a.token || "";
   switch (a.action) {
-    case "join":
-      r = g.settings.visibility === "ask" && g.players.length > 0 && !g.player(a.token) ? g.requestJoin(a.token, a.name) : g.addPlayer(a.token, a.name);
+    case "join": {
+      const mine = g.player(a.token);
+      if (!mine && g.phase !== "lobby") {
+        const seat = g.players.find((p) => !p.bot && p.name.toLowerCase() === a.name.trim().toLowerCase());
+        if (seat && now - (room.seen[seat.id] ?? 0) >= AWAY_MS) {
+          const oldId = seat.id;
+          r = g.reclaimSeat(oldId, a.token);
+          if (r.ok) {
+            room.seen[a.token] = now;
+            delete room.seen[oldId];
+          }
+        } else if (seat) {
+          r = { ok: false, error: `${seat.name} is still connected. If that is you on another device, wait a minute and try again.` };
+        } else {
+          r = { ok: false, error: "The game has already started." };
+        }
+      } else if (g.settings.visibility === "ask" && g.players.length > 0 && !mine) {
+        r = g.requestJoin(a.token, a.name);
+      } else {
+        r = g.addPlayer(a.token, a.name);
+      }
+      break;
+    }
+    case "makeHost":
+      r = hostOnly(g, token) ?? g.setHost(a.target);
       break;
     case "admit":
       r = hostOnly(g, token) ?? g.admit(a.target);

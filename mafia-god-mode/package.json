@@ -12,6 +12,7 @@
     "e2e:typing": "node e2e/feedback-in-room.mjs",
     "e2e:settings": "CHECK_OLD_ROOM=1 node e2e/lobby-settings.mjs",
     "e2e:narrator": "node e2e/narrator-midgame.mjs",
+    "e2e:reliability": "node e2e/reliability.mjs",
     "build:api": "node scripts-bundle-api.mjs"
   },
   "dependencies": {

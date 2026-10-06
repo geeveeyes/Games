@@ -52,7 +52,7 @@ export async function call(a: Action): Promise<ApiResponse> {
       return { ok: false, error: `Game server error (HTTP ${res.status}). ${text.replace(/<[^>]*>/g, " ").trim().slice(0, 140)}` };
     }
   } catch {
-    return { ok: false, error: "Cannot reach the game server. Check your connection." };
+    return { ok: false, error: "Cannot reach the game server. Check your connection.", status: 0 };
   }
 }
 
@@ -78,17 +78,28 @@ export function useRoom(session: Session | null, onGone: () => void) {
   const token = playerToken();
   const busy = useRef(false);
   const phase = useRef("lobby");
+  // How many background refreshes in a row could not reach the server. Two or more means we are offline.
+  const [failures, setFailures] = useState(0);
+  const failCount = useRef(0);
+  const wake = useRef<() => void>(() => {});
 
   // An error from the player's own tap stays on screen for a few seconds. Without this the next
   // background refresh would wipe it before anyone could read it.
   const stickyUntil = useRef(0);
   const apply = useCallback((r: ApiResponse, fromTap = false) => {
     if (r.ok) {
+      failCount.current = 0;
+      setFailures(0);
       skew.current = r.view.now - Date.now();
       phase.current = r.view.phase;
       setView(r.view);
       if (Date.now() > stickyUntil.current) setError(null);
       return true;
+    }
+    if (r.status === 0) {
+      failCount.current += 1;
+      setFailures(failCount.current);
+      if (!fromTap) return false; // the offline banner explains it; do not also show a red error
     }
     if (fromTap) stickyUntil.current = Date.now() + 6000;
     setError(r.error);
@@ -104,18 +115,28 @@ export function useRoom(session: Session | null, onGone: () => void) {
     let live = true;
     let timer: ReturnType<typeof setTimeout>;
     // Fast while something is waiting on a tap, slow while people just talk.
-    const delay = () => (["night", "vote", "reveal"].includes(phase.current) ? 1000 : 2000);
+    // When the connection drops, ease off (up to 8 seconds) instead of hammering the server.
+    const delay = () =>
+      failCount.current >= 2 ? Math.min(8000, 1000 * 2 ** Math.min(failCount.current - 1, 3)) : ["night", "vote", "reveal"].includes(phase.current) ? 1000 : 2000;
     const poll = async () => {
+      clearTimeout(timer);
       if (!busy.current && !document.hidden) {
         const r = await call(session.mode === "watch" ? { action: "watch", code: session.code } : { action: "poll", code: session.code, token });
         if (live) apply(r);
       }
       if (live) timer = setTimeout(poll, delay());
     };
+    wake.current = poll;
     poll();
+    // A phone that was asleep or offline catches up the moment it is back.
+    const onBack = () => !document.hidden && live && poll();
+    document.addEventListener("visibilitychange", onBack);
+    window.addEventListener("online", onBack);
     return () => {
       live = false;
       clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onBack);
+      window.removeEventListener("online", onBack);
     };
   }, [session?.code, session?.mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -133,5 +154,5 @@ export function useRoom(session: Session | null, onGone: () => void) {
   );
 
   const now = () => Date.now() + skew.current;
-  return { view, error, setError, act, now, token };
+  return { view, error, setError, act, now, token, offline: failures >= 2, retry: () => wake.current() };
 }
