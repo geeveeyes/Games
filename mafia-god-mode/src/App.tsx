@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { type Mode, type Role, type Settings, type Visibility, type VoteStyle, actsIn, isMafiaRole } from "../shared/game";
 import { DAY_SECONDS, DEFENSE_SECONDS, DETECTIVE_COUNTS, FINAL_VOTE_SCOPES, LANGS, MAFIA_COUNTS, MODE_IDS, VISIBILITY_IDS, VOTE_SECONDS, VOTE_STYLE_IDS } from "../shared/options";
+import { winOdds } from "../shared/odds";
 import type { ClientView, RoomSummary } from "../shared/room";
 import { call, callRooms, loadSession, playerToken, saveName, saveSession, savedName, useRoom, type Session } from "./api";
 import { keepAwake, plain, useNarrator } from "./narrator";
@@ -647,6 +648,24 @@ function VoteReveal({ v }: { v: ClientView }) {
   );
 }
 
+/** Rough pre-game odds from the role mix alone (a few thousand simplified games). Updates as settings change. */
+function OddsPanel({ n, settings }: { n: number; settings: Settings }) {
+  const o = useMemo(() => winOdds(n, settings), [n, JSON.stringify(settings)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const verdict = o.favoured === "even" ? "A fair fight" : o.favoured === "town" ? "Favours the village" : "Favours the Mafia";
+  return (
+    <div className="odds" aria-label="Estimated win odds">
+      <div className="oddshead"><b>{verdict}</b><small>Estimate for {n} players</small></div>
+      <div className="oddsbar" role="img" aria-label={`Village ${o.town} percent, Mafia ${o.mafia} percent${o.jester ? `, Jester ${o.jester} percent` : ""}`}>
+        <span className="t" style={{ width: `${o.town}%` }} />
+        {o.jester > 0 && <span className="j" style={{ width: `${o.jester}%` }} />}
+        <span className="m" style={{ width: `${o.mafia}%` }} />
+      </div>
+      <div className="oddsnums"><span>Village {o.town}%</span>{o.jester > 0 && <span>Jester {o.jester}%</span>}<span>Mafia {o.mafia}%</span></div>
+      <small className="muted">Rough guess from the role mix alone. Good talking and lying matter more.</small>
+    </div>
+  );
+}
+
 function Roster({ players, showRoles, onRemove, hostId, onHost, you }: { players: Player[]; showRoles?: boolean; onRemove?: (id: string) => void; hostId?: string | null; onHost?: (id: string) => void; you?: string }) {
   return (
     <div className="roster">
@@ -775,6 +794,7 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
             .filter(([, k]) => k > 0)
             .map(([name, k]) => <b key={name}>{k} {name}{name === "Villager" && k !== 1 ? "s" : ""}</b>)}
         </div>
+        <OddsPanel n={Math.max(n, v.minPlayers)} settings={s} />
         <div className="stack">
           {VOTE_STYLE_IDS.map((id) => ({ id, ...VOTE_TEXT[id] })).map(({ id, title, text }) => (
             <label key={id} className={`opt ${s.voteStyle === id ? "sel" : ""}`}>

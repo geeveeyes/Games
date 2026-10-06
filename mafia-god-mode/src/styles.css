@@ -186,3 +186,9 @@ textarea { font: 1rem var(--body); padding: 12px; border-radius: 8px; border: 1p
 .tile { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
 .tile b { font-family: var(--display); font-size: 1.25rem; letter-spacing: .03em; }
 .chatslot { margin-top: 20px; }
+
+.odds { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--line, #333); border-radius: 12px; }
+.oddshead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.oddsbar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: #222; }
+.oddsbar .t { background: #3d8bd9; } .oddsbar .j { background: #c9a227; } .oddsbar .m { background: #c0392b; }
+.oddsnums { display: flex; justify-content: space-between; font-size: 0.85rem; }
