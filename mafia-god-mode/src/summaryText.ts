@@ -14,6 +14,8 @@ export function describeEvent(e: HistoryEvent, players: GameSummary["players"]):
       return `${night}: the Mafia killed ${names(e.ids)} (${ROLE(p(e.ids?.[0])?.role ?? "?")}).`;
     case "vigilante-shot":
       return `${night}: the Vigilante ${name(e.by)} shot ${names(e.ids)}${e.flag ? ` (${ROLE(p(e.ids?.[0])?.role ?? "?")}).` : ", but they were saved."}`;
+    case "bomb":
+      return `${night}: the Bomber ${name(e.by)} blew up and took ${names(e.ids?.slice(1))} along.`;
     case "saved":
       return `${night}: the Doctor ${name(e.by)} saved ${names(e.ids)}.`;
     case "investigated":
@@ -31,7 +33,7 @@ export function describeEvent(e: HistoryEvent, players: GameSummary["players"]):
 
 /** The timeline in the order things happened: each night's events, then that day's. */
 export function describeTimeline(summary: GameSummary): string[] {
-  const order = (e: HistoryEvent) => e.round * 10 + (["night-kill", "vigilante-shot", "saved", "investigated"].includes(e.kind) ? 0 : 5);
+  const order = (e: HistoryEvent) => e.round * 10 + (["night-kill", "vigilante-shot", "bomb", "saved", "investigated"].includes(e.kind) ? 0 : 5);
   return summary.timeline
     .map((e, i) => ({ e, i }))
     .sort((a, b) => order(a.e) - order(b.e) || a.i - b.i)

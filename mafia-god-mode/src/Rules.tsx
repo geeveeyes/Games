@@ -42,6 +42,7 @@ export function RulesModal({ onClose }: { onClose: () => void }) {
             <ul className="rules-list">
               <li><b>Godfather.</b> Leads the Mafia and wakes with them, but the Detective sees the Godfather as innocent. The Town must remove the Godfather too.</li>
               <li><b>Jester.</b> Wants to be voted out. If the village votes the Jester out by day, the Jester wins alone and the game ends. Being killed at night does not count.</li>
+              <li><b>Bomber.</b> A secret Mafia ally. They know who the Mafia are, but the Mafia do not know them, and the Detective sees them as innocent. Once per game, before the village sleeps, they may blow themselves up and take one other player with them (ideally the Doctor or Detective).</li>
               <li><b>Vigilante.</b> A town member with one bullet for the whole game. Each night they may shoot someone or hold fire. If the Doctor saves the target, nobody dies. Shooting a friend is on them.</li>
             </ul>
           </section>

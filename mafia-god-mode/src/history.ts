@@ -19,7 +19,7 @@ export interface PlayedGame {
 const KEY = "mgm.history";
 const MAX = 200;
 
-export const teamOf = (role: Role): Team => (isMafiaRole(role) ? "mafia" : role === "jester" ? "jester" : "town");
+export const teamOf = (role: Role): Team => (isMafiaRole(role) || role === "bomber" ? "mafia" : role === "jester" ? "jester" : "town");
 
 export function loadHistory(): PlayedGame[] {
   try {

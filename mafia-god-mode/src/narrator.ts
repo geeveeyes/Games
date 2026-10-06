@@ -58,7 +58,7 @@ export function preloadClips(lang: Lang): Promise<void> {
 if (typeof window !== "undefined") (window as unknown as { __mgmClipId: typeof clipId }).__mgmClipId = clipId; // lets browser tests compute clip names
 
 const MOOD: Partial<Record<Cue, Mood>> = {
-  deal: "night", night: "night", mafia: "night", doctor: "night", detective: "night", vigilante: "night",
+  deal: "night", night: "night", mafia: "night", doctor: "night", detective: "night", vigilante: "night", bomber: "night",
   dawn: "day", "dawn-death": "day", day: "day", vote: "tense", elim: "night", noelim: "day",
   "win-town": "win", "win-mafia": "lose", "win-jester": "win",
 };

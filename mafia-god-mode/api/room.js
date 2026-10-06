@@ -241,6 +241,7 @@ var DEFAULT_SETTINGS = {
   useGodfather: false,
   useJester: false,
   useVigilante: false,
+  useBomber: false,
   detectiveCount: 1,
   finalVoteScope: "accused"
 };
@@ -269,6 +270,7 @@ function normalizeSettings(input) {
     useGodfather: bool(raw.useGodfather, d.useGodfather),
     useJester: bool(raw.useJester, d.useJester),
     useVigilante: bool(raw.useVigilante, d.useVigilante),
+    useBomber: bool(raw.useBomber, d.useBomber),
     detectiveCount: clampN(Number(raw.detectiveCount ?? d.detectiveCount), 1, 2, d.detectiveCount),
     finalVoteScope: oneOf(raw.finalVoteScope, ["accused", "anyone"], d.finalVoteScope)
   };
@@ -313,9 +315,11 @@ function roleCounts(n, s) {
   rest -= detective;
   const vigilante = s.useVigilante && rest >= 3 ? 1 : 0;
   rest -= vigilante;
+  const bomber = s.useBomber && rest >= 4 ? 1 : 0;
+  rest -= bomber;
   const jester = s.useJester && rest >= 3 ? 1 : 0;
   rest -= jester;
-  return { mafia, godfather, doctor, detective, vigilante, jester, villager: rest, mafiaTotal };
+  return { mafia, godfather, doctor, detective, vigilante, bomber, jester, villager: rest, mafiaTotal };
 }
 function shuffle(items, rng) {
   const a = [...items];
@@ -353,6 +357,10 @@ var Game = class _Game {
   vigilantePick = null;
   // a player id, or "skip" for holding fire
   vigilanteUsed = false;
+  bomberPick = null;
+  // a player id, or "skip" for waiting
+  bombed = [];
+  // who died in tonight's bomb: [bomber, victim]
   lastNightDeathIds = [];
   gameNo = 0;
   history = [];
@@ -578,6 +586,7 @@ var Game = class _Game {
       ...Array(c.doctor).fill("doctor"),
       ...Array(c.detective).fill("detective"),
       ...Array(c.vigilante).fill("vigilante"),
+      ...Array(c.bomber).fill("bomber"),
       ...Array(c.jester).fill("jester"),
       ...Array(c.villager).fill("villager")
     ];
@@ -592,6 +601,8 @@ var Game = class _Game {
     this.round = 0;
     this.lastSaved = null;
     this.vigilanteUsed = false;
+    this.bomberPick = null;
+    this.bombed = [];
     this.lastNightDeathIds = [];
     this.gameNo += 1;
     this.history = [];
@@ -617,7 +628,9 @@ var Game = class _Game {
   beginNight() {
     this.round += 1;
     this.phase = "night";
-    this.steps = ["mafia"];
+    this.steps = [];
+    if (this.players.some((p) => p.role === "bomber")) this.steps.push("bomber");
+    this.steps.push("mafia");
     if (this.players.some((p) => p.role === "doctor")) this.steps.push("doctor");
     if (this.players.some((p) => p.role === "detective")) this.steps.push("detective");
     if (this.players.some((p) => p.role === "vigilante")) this.steps.push("vigilante");
@@ -626,6 +639,8 @@ var Game = class _Game {
     this.doctorPick = null;
     this.detectivePicks = {};
     this.vigilantePick = null;
+    this.bomberPick = null;
+    this.bombed = [];
     this.votes = {};
     this.talk = [];
     this.lastResult = null;
@@ -655,6 +670,7 @@ var Game = class _Game {
     if (!step || !me || !me.alive || !actsIn(me.role, step) || !this.actors().some((p) => p.id === playerId)) return [];
     let pool = this.alive();
     if (step === "mafia") pool = pool.filter((p) => !isMafiaRole(p.role));
+    if (step === "bomber") pool = pool.filter((p) => p.id !== me.id && !isMafiaRole(p.role));
     if (step === "detective" || step === "vigilante") pool = pool.filter((p) => p.id !== me.id);
     if (step === "doctor") {
       if (!this.settings.doctorSelfSave) pool = pool.filter((p) => p.id !== me.id);
@@ -667,6 +683,11 @@ var Game = class _Game {
     if (!step) return fail("It is not night.");
     const me = this.player(playerId);
     if (!me?.alive || !actsIn(me.role, step)) return fail("It is not your turn.");
+    if (step === "bomber") {
+      if (targetId !== "skip" && !this.canTarget(playerId).includes(targetId)) return fail("You cannot choose that player.");
+      this.bomberPick = targetId;
+      return ok();
+    }
     if (step === "vigilante") {
       if (this.vigilanteUsed) return fail("You have already used your bullet.");
       if (targetId !== "skip" && !this.canTarget(playerId).includes(targetId)) return fail("You cannot choose that player.");
@@ -699,6 +720,7 @@ var Game = class _Game {
       return picks.every(Boolean) && new Set(picks).size === 1;
     }
     if (step === "doctor") return this.doctorPick !== null;
+    if (step === "bomber") return this.bomberPick !== null;
     if (step === "vigilante") return this.vigilantePick !== null;
     return this.actors().every((d) => !!this.detectivePicks[d.id]);
   }
@@ -707,6 +729,7 @@ var Game = class _Game {
     const step = this.step;
     if (!step) return;
     if (!force && !this.stepComplete()) return;
+    if (step === "bomber") this.detonate();
     this.stepIdx += 1;
     if (this.stepIdx < this.steps.length) {
       this.announceStep(step);
@@ -714,6 +737,16 @@ var Game = class _Game {
       if (this.classic()) this.narrate(this.t("close", { role: roleWord(this.settings.language, step) }), "night");
       this.resolveNight();
     }
+  }
+  /** The Bomber blows up at once, before the Mafia, Doctor and Detective act: a dead Doctor cannot save anyone. */
+  detonate() {
+    const bomber = this.players.find((p) => p.role === "bomber" && p.alive);
+    const victim = this.bomberPick && this.bomberPick !== "skip" ? this.player(this.bomberPick) : void 0;
+    if (!bomber || !victim?.alive) return;
+    bomber.alive = false;
+    victim.alive = false;
+    this.bombed = [bomber.id, victim.id];
+    this.log({ round: this.round, kind: "bomb", ids: [bomber.id, victim.id], by: bomber.id });
   }
   mafiaTarget() {
     const tally = /* @__PURE__ */ new Map();
@@ -732,10 +765,11 @@ var Game = class _Game {
     const shot = this.vigilantePick && this.vigilantePick !== "skip" ? this.vigilantePick : null;
     if (shot) this.vigilanteUsed = true;
     const attacked = [...new Set([target, shot].filter((x) => !!x))];
-    const dead = attacked.filter((id) => id !== this.doctorPick).map((id) => this.player(id));
+    const bombDead = this.bombed.map((id) => this.player(id));
+    const dead = [...bombDead, ...attacked.filter((id) => id !== this.doctorPick && !this.bombed.includes(id)).map((id) => this.player(id))];
     this.lastSaved = this.doctorPick;
     for (const id of attacked) if (id === this.doctorPick) this.log({ round: this.round, kind: "saved", ids: [id], by: this.players.find((p) => p.role === "doctor")?.id });
-    if (target && target !== this.doctorPick) this.log({ round: this.round, kind: "night-kill", ids: [target] });
+    if (target && target !== this.doctorPick && !this.bombed.includes(target)) this.log({ round: this.round, kind: "night-kill", ids: [target] });
     if (shot) this.log({ round: this.round, kind: "vigilante-shot", ids: [shot], by: this.players.find((p) => p.role === "vigilante")?.id, flag: shot !== this.doctorPick });
     for (const v2 of dead) v2.alive = false;
     this.lastNightDeathIds = dead.map((d) => d.id);
@@ -746,6 +780,10 @@ var Game = class _Game {
     let body;
     if (dead.length === 0) {
       body = this.t("dawn.none");
+    } else if (bombDead.length) {
+      const extra = dead.slice(2);
+      body = this.t("dawn.bomb", { a: bombDead[0].name, b: bombDead[1].name }) + (extra.length ? this.t("dawn.also", { names: extra.map((d) => d.name).join(", ") }) : "");
+      if (reveal) body += this.t("dawn.role.named", { name: bombDead[1].name, were: wereWord(lang, bombDead[1].role) }) + extra.map((d) => this.t("dawn.role.named", { name: d.name, were: wereWord(lang, d.role) })).join("");
     } else if (dead.length === 1) {
       body = this.t("dawn.death", { name: dead[0].name }) + (reveal ? this.t("dawn.role", { were: wereWord(lang, dead[0].role) }) : "");
     } else {
@@ -878,9 +916,10 @@ var Game = class _Game {
   // ---------- end ----------
   checkWin() {
     const mafia = this.aliveMafia().length;
-    const town = this.alive().length - mafia;
+    const side = mafia + this.players.filter((p) => p.alive && p.role === "bomber").length;
+    const town = this.alive().length - side;
     if (mafia === 0) this.finish("town", this.t("win.town"), "win-town");
-    else if (mafia >= town) this.finish("mafia", this.t("win.mafia"), "win-mafia");
+    else if (side >= town) this.finish("mafia", this.t("win.mafia"), "win-mafia");
   }
   finish(w2, text, cue) {
     this.winner = w2;
@@ -914,6 +953,11 @@ var Game = class _Game {
       const target = this.player(sh.ids[0]);
       if (!sh.by || !target) continue;
       add(isMafiaRole(target.role) ? { id: "dead-eye", title: "Dead eye", detail: `Shot a Mafia member (${target.name}) on night ${sh.round}.`, winners: [sh.by] } : { id: "friendly-fire", title: "Friendly fire", detail: `Shot an innocent (${target.name}) on night ${sh.round}.`, winners: [sh.by] });
+    }
+    const bomb = this.history.find((e) => e.kind === "bomb");
+    if (bomb?.by) {
+      const victim = this.player(bomb.ids[1]);
+      add({ id: "kamikaze", title: "Kamikaze", detail: `Blew up with ${victim?.name ?? "someone"} on night ${bomb.round}.`, winners: [bomb.by] });
     }
     const totalVotes = Object.values(received).reduce((a, b) => a + b, 0);
     const team = this.players.filter((p) => isMafiaRole(p.role));
@@ -973,7 +1017,7 @@ var Game = class _Game {
     const me = this.player(playerId);
     const over = this.phase === "over";
     const seeAll = over || me && !me.alive && this.settings.deadSeeRoles;
-    const showRole = (p) => seeAll || p.id === me?.id || isMafiaRole(me?.role) && isMafiaRole(p.role) || !p.alive && this.settings.revealRoleOnDeath;
+    const showRole = (p) => seeAll || p.id === me?.id || isMafiaRole(me?.role) && isMafiaRole(p.role) || me?.role === "bomber" && isMafiaRole(p.role) || !p.alive && this.settings.revealRoleOnDeath;
     const counts = this.phase === "vote" || this.phase === "defense" || this.phase === "result" ? this.tally() : {};
     const step = this.step;
     return {
@@ -1007,7 +1051,7 @@ var Game = class _Game {
       night: {
         step: this.phase === "night" ? step : null,
         yourTargets: me ? this.canTarget(me.id) : [],
-        yourPick: isMafiaRole(me?.role) ? this.mafiaPicks[me.id] ?? null : me?.role === "doctor" ? this.doctorPick : me?.role === "detective" ? this.detectivePicks[me.id] ?? null : me?.role === "vigilante" ? this.vigilantePick : null,
+        yourPick: isMafiaRole(me?.role) ? this.mafiaPicks[me.id] ?? null : me?.role === "doctor" ? this.doctorPick : me?.role === "detective" ? this.detectivePicks[me.id] ?? null : me?.role === "vigilante" ? this.vigilantePick : me?.role === "bomber" ? this.bomberPick : null,
         mafiaPicks: isMafiaRole(me?.role) && this.step === "mafia" ? this.mafiaPicks : {}
       },
       vote: {
@@ -1070,7 +1114,7 @@ function tasks(room, g, t) {
       const mine = g.actors();
       const humansMafia = isMafiaRole(b.role) ? mine.filter((m) => !m.bot) : [];
       const waitingOnHuman = humansMafia.length > 0 && humansMafia.every((m) => !g.mafiaPicks[m.id]);
-      const already = isMafiaRole(b.role) ? g.mafiaPicks[b.id] : b.role === "doctor" ? g.doctorPick : b.role === "vigilante" ? g.vigilantePick : g.detectivePicks[b.id];
+      const already = isMafiaRole(b.role) ? g.mafiaPicks[b.id] : b.role === "doctor" ? g.doctorPick : b.role === "vigilante" ? g.vigilantePick : b.role === "bomber" ? g.bomberPick : g.detectivePicks[b.id];
       if (!waitingOnHuman && !already) out.push({ id: `night:${b.id}`, bot: b, min: t.botNightMinMs, max: t.botNightMaxMs });
     }
     if (g.phase === "vote" && b.alive && !g.votes[b.id]) {
@@ -1134,6 +1178,9 @@ function act(room, g, id, bot, rng) {
       if (target) g.nightAction(bot.id, target.id);
     } else if (bot.role === "doctor") {
       g.nightAction(bot.id, pickOf(pool, rng).id);
+    } else if (bot.role === "bomber") {
+      const boom = g.round >= 2 && rng() < 0.25;
+      g.nightAction(bot.id, boom ? pickOf(pool, rng).id : "skip");
     } else if (bot.role === "vigilante") {
       const shoot = g.round >= 2 && rng() < 0.3;
       g.nightAction(bot.id, shoot ? pickOf(pool, rng).id : "skip");

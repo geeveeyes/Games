@@ -223,3 +223,60 @@ describe("ghost chat", () => {
     expect(g.viewFor(alive[0].id).vote.byWho).toEqual({});
   });
 });
+
+describe("Bomber", () => {
+  const setup = () => {
+    const g = game(9, { useBomber: true });
+    return { g, bomber: withRole(g, "bomber")[0] };
+  };
+  it("is dealt only when enabled and enough villagers remain", () => {
+    expect(roleCounts(9, { useDoctor: true, useDetective: true, mafiaCount: null, useBomber: true }).bomber).toBe(1);
+    expect(roleCounts(5, { useDoctor: true, useDetective: true, mafiaCount: null, useBomber: true }).bomber).toBe(0);
+    expect(withRole(game(9, {}), "bomber")).toHaveLength(0);
+  });
+  it("sees the Mafia, reads innocent to the Detective, and is not seen by the Mafia", () => {
+    const { g, bomber } = setup();
+    const view = g.viewFor(bomber.id);
+    const mafiaIds = g.players.filter((p) => isMafiaRole(p.role)).map((p) => p.id);
+    for (const id of mafiaIds) expect(view.players.find((p) => p.id === id)!.role).not.toBeNull();
+    const mafiaView = g.viewFor(mafiaIds[0]);
+    expect(mafiaView.players.find((p) => p.id === bomber.id)!.role).toBeNull();
+    const det = withRole(g, "detective")[0];
+    g.beginNight();
+    while (g.step !== "detective") g.advanceNight(true);
+    g.nightAction(det.id, bomber.id);
+    expect(g.notes[det.id].at(-1)!.isMafia).toBe(false);
+  });
+  it("wakes first, and detonating kills the bomber and the target before the Doctor can act", () => {
+    const { g, bomber } = setup();
+    const doc = withRole(g, "doctor")[0];
+    g.beginNight();
+    expect(g.step).toBe("bomber");
+    expect(g.nightAction(bomber.id, doc.id).ok).toBe(true);
+    g.advanceNight();
+    expect(g.player(doc.id)!.alive).toBe(false);
+    while (g.step) g.advanceNight(true);
+    expect(g.phase === "dawn" || g.phase === "over").toBe(true);
+    expect(g.player(bomber.id)!.alive).toBe(false);
+    expect(g.lastNightDeathIds).toEqual(expect.arrayContaining([bomber.id, doc.id]));
+    expect(g.history.some((e) => e.kind === "bomb")).toBe(true);
+  });
+  it("cannot target the Mafia or itself, and can wait", () => {
+    const { g, bomber } = setup();
+    g.beginNight();
+    const ok = g.canTarget(bomber.id);
+    expect(ok).not.toContain(bomber.id);
+    for (const m of g.players.filter((p) => isMafiaRole(p.role))) expect(ok).not.toContain(m.id);
+    expect(g.nightAction(bomber.id, "skip").ok).toBe(true);
+    while (g.step) g.advanceNight(true);
+    expect(g.player(bomber.id)!.alive).toBe(true);
+  });
+  it("counts toward Mafia parity but cannot keep the game going alone", () => {
+    const { g, bomber } = setup();
+    for (const p of g.players) if (isMafiaRole(p.role)) p.alive = false;
+    g.beginNight();
+    while (g.step) g.advanceNight(true);
+    expect(g.winner).toBe("town");
+    expect(bomber.alive).toBe(true);
+  });
+});

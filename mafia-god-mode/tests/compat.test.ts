@@ -21,7 +21,7 @@ const EVERY_SETTING_CHANGE: Record<string, unknown>[] = [
   { roomName: "Family night" },
   { useDoctor: false }, { useDetective: false }, { doctorSelfSave: false }, { doctorRepeatSave: false },
   { revealRoleOnDeath: true }, { deadSeeRoles: true },
-  { language: "hi" }, { language: "ta" }, { useGodfather: true }, { useJester: true }, { useVigilante: true },
+  { language: "hi" }, { language: "ta" }, { useGodfather: true }, { useJester: true }, { useVigilante: true }, { useBomber: true }, { detectiveCount: 2 }, { finalVoteScope: "anyone" },
   { mafiaCount: 2 }, { mafiaCount: null }, { dayTimerSec: 60 }, { voteTimerSec: 30 }, { defenseSec: 45 },
 ];
 

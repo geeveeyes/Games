@@ -37,7 +37,7 @@ export function recordableSegments(lang: Lang): string[] {
           add(seg.say);
         } else if (vars.every((x) => ["role", "were", "time"].includes(x))) {
           // Finite choices only: the roles that wake at night, every "they were" role, and the timer values.
-          const nightRoles = ["mafia", "doctor", "detective", "vigilante"];
+          const nightRoles = ["mafia", "doctor", "detective", "vigilante", "bomber"];
           const domain: Record<string, Record<string, string>[]> = {
             role: nightRoles.map((r) => ({ role: ROLE_WORDS[r][lang] })),
             were: Object.keys(WERE_WORDS).map((r) => ({ were: WERE_WORDS[r][lang] })),

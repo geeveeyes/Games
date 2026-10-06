@@ -4,7 +4,7 @@ import { type Lang, LANG_IDS, roleWord, say, spokenTime, wereWord } from "./scri
 // Every secret (roles, night picks, detective results) stays in this object;
 // `viewFor` is the only way state leaves it.
 
-export type Role = "mafia" | "godfather" | "doctor" | "detective" | "vigilante" | "jester" | "villager";
+export type Role = "mafia" | "godfather" | "doctor" | "detective" | "vigilante" | "bomber" | "jester" | "villager";
 /** The Mafia team: regular Mafia and the Godfather. */
 export const isMafiaRole = (r: Role | null | undefined): boolean => r === "mafia" || r === "godfather";
 export type Phase = "lobby" | "reveal" | "night" | "dawn" | "day" | "vote" | "defense" | "result" | "over";
@@ -13,7 +13,7 @@ export type VoteStyle = "trial" | "quick";
 export type Visibility = "open" | "ask" | "private";
 export type VoteStage = "poll" | "final";
 export type Mode = "table" | "phones" | "remote";
-export type NightStep = "mafia" | "doctor" | "detective" | "vigilante";
+export type NightStep = "bomber" | "mafia" | "doctor" | "detective" | "vigilante";
 /** Which night step a role acts in. The Mafia step belongs to the whole Mafia team. */
 export const actsIn = (role: Role | null | undefined, step: NightStep | null): boolean => step === "mafia" ? isMafiaRole(role) : role === step;
 export type Winner = "town" | "mafia" | "jester";
@@ -37,6 +37,7 @@ export interface Settings {
   useGodfather: boolean; // a Mafia member who looks innocent to the Detective
   useJester: boolean; // wins alone if voted out by day
   useVigilante: boolean; // town member with one night shot per game
+  useBomber: boolean; // Mafia-side role unknown to the Mafia; may blow itself up with one other player
   detectiveCount: number; // 1 or 2 detectives (each investigates on their own)
   finalVoteScope: "accused" | "anyone"; // trial style: who the final vote may name
 }
@@ -60,6 +61,7 @@ export const DEFAULT_SETTINGS: Settings = {
   useGodfather: false,
   useJester: false,
   useVigilante: false,
+  useBomber: false,
   detectiveCount: 1,
   finalVoteScope: "accused",
 };
@@ -94,6 +96,7 @@ export function normalizeSettings(input: Partial<Record<keyof Settings, unknown>
     useGodfather: bool(raw.useGodfather, d.useGodfather),
     useJester: bool(raw.useJester, d.useJester),
     useVigilante: bool(raw.useVigilante, d.useVigilante),
+    useBomber: bool(raw.useBomber, d.useBomber),
     detectiveCount: clampN(Number(raw.detectiveCount ?? d.detectiveCount), 1, 2, d.detectiveCount),
     finalVoteScope: oneOf(raw.finalVoteScope, ["accused", "anyone"], d.finalVoteScope),
   };
@@ -132,7 +135,7 @@ export interface Player {
 
 /** Narration text uses "|" for a short pause and "||" for a long one; the cue drives music and sound effects. */
 export type Cue =
-  | "deal" | "night" | "mafia" | "doctor" | "detective" | "vigilante" | "dawn" | "dawn-death"
+  | "deal" | "night" | "mafia" | "doctor" | "detective" | "vigilante" | "bomber" | "dawn" | "dawn-death"
   | "day" | "vote" | "defense" | "final" | "elim" | "noelim" | "win-town" | "win-mafia" | "win-jester";
 
 export interface Line {
@@ -145,7 +148,7 @@ export interface Line {
 /** What happened, recorded as the game goes and revealed at the end. */
 export interface HistoryEvent {
   round: number;
-  kind: "night-kill" | "vigilante-shot" | "saved" | "investigated" | "accused" | "eliminated" | "no-elimination" | "vote";
+  kind: "night-kill" | "vigilante-shot" | "bomb" | "saved" | "investigated" | "accused" | "eliminated" | "no-elimination" | "vote";
   ids?: string[];
   by?: string;
   flag?: boolean; // investigated: is Mafia. vigilante-shot: the target died.
@@ -185,7 +188,7 @@ export type Rng = () => number;
  * Suggested role mix for a player count. Optional roles only appear when enough ordinary villagers remain,
  * so the game never turns into all special roles.
  */
-export function roleCounts(n: number, s: Pick<Settings, "useDoctor" | "useDetective" | "mafiaCount"> & Partial<Pick<Settings, "useGodfather" | "useJester" | "useVigilante" | "detectiveCount">>) {
+export function roleCounts(n: number, s: Pick<Settings, "useDoctor" | "useDetective" | "mafiaCount"> & Partial<Pick<Settings, "useGodfather" | "useJester" | "useVigilante" | "useBomber" | "detectiveCount">>) {
   const maxMafia = Math.max(1, Math.ceil(n / 2) - 1);
   const auto = Math.max(1, Math.floor(n / 3));
   const mafiaTotal = Math.min(maxMafia, Math.max(1, s.mafiaCount ?? auto));
@@ -199,9 +202,11 @@ export function roleCounts(n: number, s: Pick<Settings, "useDoctor" | "useDetect
   rest -= detective;
   const vigilante = s.useVigilante && rest >= 3 ? 1 : 0;
   rest -= vigilante;
+  const bomber = s.useBomber && rest >= 4 ? 1 : 0;
+  rest -= bomber;
   const jester = s.useJester && rest >= 3 ? 1 : 0;
   rest -= jester;
-  return { mafia, godfather, doctor, detective, vigilante, jester, villager: rest, mafiaTotal };
+  return { mafia, godfather, doctor, detective, vigilante, bomber, jester, villager: rest, mafiaTotal };
 }
 
 export function shuffle<T>(items: T[], rng: Rng): T[] {
@@ -236,6 +241,8 @@ export class Game {
   detectivePicks: Record<string, string> = {}; // each Detective investigates on their own
   vigilantePick: string | null = null; // a player id, or "skip" for holding fire
   vigilanteUsed = false;
+  bomberPick: string | null = null; // a player id, or "skip" for waiting
+  bombed: string[] = []; // who died in tonight's bomb: [bomber, victim]
   lastNightDeathIds: string[] = [];
   gameNo = 0;
   history: HistoryEvent[] = [];
@@ -473,6 +480,7 @@ export class Game {
       ...Array<Role>(c.doctor).fill("doctor"),
       ...Array<Role>(c.detective).fill("detective"),
       ...Array<Role>(c.vigilante).fill("vigilante"),
+      ...Array<Role>(c.bomber).fill("bomber"),
       ...Array<Role>(c.jester).fill("jester"),
       ...Array<Role>(c.villager).fill("villager"),
     ];
@@ -487,6 +495,8 @@ export class Game {
     this.round = 0;
     this.lastSaved = null;
     this.vigilanteUsed = false;
+    this.bomberPick = null;
+    this.bombed = [];
     this.lastNightDeathIds = [];
     this.gameNo += 1;
     this.history = [];
@@ -514,7 +524,9 @@ export class Game {
   beginNight() {
     this.round += 1;
     this.phase = "night";
-    this.steps = ["mafia"];
+    this.steps = [];
+    if (this.players.some((p) => p.role === "bomber")) this.steps.push("bomber");
+    this.steps.push("mafia");
     if (this.players.some((p) => p.role === "doctor")) this.steps.push("doctor");
     if (this.players.some((p) => p.role === "detective")) this.steps.push("detective");
     if (this.players.some((p) => p.role === "vigilante")) this.steps.push("vigilante");
@@ -523,6 +535,8 @@ export class Game {
     this.doctorPick = null;
     this.detectivePicks = {};
     this.vigilantePick = null;
+    this.bomberPick = null;
+    this.bombed = [];
     this.votes = {};
     this.talk = [];
     this.lastResult = null;
@@ -555,6 +569,7 @@ export class Game {
     if (!step || !me || !me.alive || !actsIn(me.role, step) || !this.actors().some((p) => p.id === playerId)) return [];
     let pool = this.alive();
     if (step === "mafia") pool = pool.filter((p) => !isMafiaRole(p.role));
+    if (step === "bomber") pool = pool.filter((p) => p.id !== me.id && !isMafiaRole(p.role));
     if (step === "detective" || step === "vigilante") pool = pool.filter((p) => p.id !== me.id);
     if (step === "doctor") {
       if (!this.settings.doctorSelfSave) pool = pool.filter((p) => p.id !== me.id);
@@ -568,6 +583,11 @@ export class Game {
     if (!step) return fail("It is not night.");
     const me = this.player(playerId);
     if (!me?.alive || !actsIn(me.role, step)) return fail("It is not your turn.");
+    if (step === "bomber") {
+      if (targetId !== "skip" && !this.canTarget(playerId).includes(targetId)) return fail("You cannot choose that player.");
+      this.bomberPick = targetId; // "skip" waits
+      return ok();
+    }
     if (step === "vigilante") {
       if (this.vigilanteUsed) return fail("You have already used your bullet.");
       if (targetId !== "skip" && !this.canTarget(playerId).includes(targetId)) return fail("You cannot choose that player.");
@@ -603,6 +623,7 @@ export class Game {
       return picks.every(Boolean) && new Set(picks).size === 1;
     }
     if (step === "doctor") return this.doctorPick !== null;
+    if (step === "bomber") return this.bomberPick !== null;
     if (step === "vigilante") return this.vigilantePick !== null;
     return this.actors().every((d) => !!this.detectivePicks[d.id]);
   }
@@ -612,6 +633,7 @@ export class Game {
     const step = this.step;
     if (!step) return;
     if (!force && !this.stepComplete()) return;
+    if (step === "bomber") this.detonate();
     this.stepIdx += 1;
     if (this.stepIdx < this.steps.length) {
       this.announceStep(step);
@@ -619,6 +641,17 @@ export class Game {
       if (this.classic()) this.narrate(this.t("close", { role: roleWord(this.settings.language, step) }), "night");
       this.resolveNight();
     }
+  }
+
+  /** The Bomber blows up at once, before the Mafia, Doctor and Detective act: a dead Doctor cannot save anyone. */
+  private detonate() {
+    const bomber = this.players.find((p) => p.role === "bomber" && p.alive);
+    const victim = this.bomberPick && this.bomberPick !== "skip" ? this.player(this.bomberPick) : undefined;
+    if (!bomber || !victim?.alive) return;
+    bomber.alive = false;
+    victim.alive = false;
+    this.bombed = [bomber.id, victim.id];
+    this.log({ round: this.round, kind: "bomb", ids: [bomber.id, victim.id], by: bomber.id });
   }
 
   private mafiaTarget(): string | null {
@@ -640,10 +673,11 @@ export class Game {
     if (shot) this.vigilanteUsed = true; // one bullet per game
     // The Doctor's save protects against any one attack.
     const attacked = [...new Set([target, shot].filter((x): x is string => !!x))];
-    const dead = attacked.filter((id) => id !== this.doctorPick).map((id) => this.player(id)!);
+    const bombDead = this.bombed.map((id) => this.player(id)!);
+    const dead = [...bombDead, ...attacked.filter((id) => id !== this.doctorPick && !this.bombed.includes(id)).map((id) => this.player(id)!)];
     this.lastSaved = this.doctorPick;
     for (const id of attacked) if (id === this.doctorPick) this.log({ round: this.round, kind: "saved", ids: [id], by: this.players.find((p) => p.role === "doctor")?.id });
-    if (target && target !== this.doctorPick) this.log({ round: this.round, kind: "night-kill", ids: [target] });
+    if (target && target !== this.doctorPick && !this.bombed.includes(target)) this.log({ round: this.round, kind: "night-kill", ids: [target] });
     if (shot) this.log({ round: this.round, kind: "vigilante-shot", ids: [shot], by: this.players.find((p) => p.role === "vigilante")?.id, flag: shot !== this.doctorPick });
     for (const v of dead) v.alive = false;
     this.lastNightDeathIds = dead.map((d) => d.id);
@@ -654,6 +688,10 @@ export class Game {
     let body: string;
     if (dead.length === 0) {
       body = this.t("dawn.none");
+    } else if (bombDead.length) {
+      const extra = dead.slice(2);
+      body = this.t("dawn.bomb", { a: bombDead[0].name, b: bombDead[1].name }) + (extra.length ? this.t("dawn.also", { names: extra.map((d) => d.name).join(", ") }) : "");
+      if (reveal) body += this.t("dawn.role.named", { name: bombDead[1].name, were: wereWord(lang, bombDead[1].role!) }) + extra.map((d) => this.t("dawn.role.named", { name: d.name, were: wereWord(lang, d.role!) })).join("");
     } else if (dead.length === 1) {
       body = this.t("dawn.death", { name: dead[0].name }) + (reveal ? this.t("dawn.role", { were: wereWord(lang, dead[0].role!) }) : "");
     } else {
@@ -798,9 +836,11 @@ export class Game {
   // ---------- end ----------
   private checkWin() {
     const mafia = this.aliveMafia().length;
-    const town = this.alive().length - mafia;
+    // A live Bomber counts toward the Mafia's numbers, but cannot keep the Mafia alive on its own.
+    const side = mafia + this.players.filter((p) => p.alive && p.role === "bomber").length;
+    const town = this.alive().length - side;
     if (mafia === 0) this.finish("town", this.t("win.town"), "win-town");
-    else if (mafia >= town) this.finish("mafia", this.t("win.mafia"), "win-mafia");
+    else if (side >= town) this.finish("mafia", this.t("win.mafia"), "win-mafia");
   }
   private finish(w: Winner, text: string, cue: Cue) {
     this.winner = w;
@@ -838,6 +878,11 @@ export class Game {
       add(isMafiaRole(target.role)
         ? { id: "dead-eye", title: "Dead eye", detail: `Shot a Mafia member (${target.name}) on night ${sh.round}.`, winners: [sh.by] }
         : { id: "friendly-fire", title: "Friendly fire", detail: `Shot an innocent (${target.name}) on night ${sh.round}.`, winners: [sh.by] });
+    }
+    const bomb = this.history.find((e) => e.kind === "bomb");
+    if (bomb?.by) {
+      const victim = this.player(bomb.ids![1]);
+      add({ id: "kamikaze", title: "Kamikaze", detail: `Blew up with ${victim?.name ?? "someone"} on night ${bomb.round}.`, winners: [bomb.by] });
     }
     const totalVotes = Object.values(received).reduce((a, b) => a + b, 0);
     const team = this.players.filter((p) => isMafiaRole(p.role));
@@ -901,7 +946,7 @@ export class Game {
     const over = this.phase === "over";
     const seeAll = over || (me && !me.alive && this.settings.deadSeeRoles);
     const showRole = (p: Player) =>
-      seeAll || (p.id === me?.id) || (isMafiaRole(me?.role) && isMafiaRole(p.role)) ||
+      seeAll || (p.id === me?.id) || (isMafiaRole(me?.role) && isMafiaRole(p.role)) || (me?.role === "bomber" && isMafiaRole(p.role)) ||
       (!p.alive && this.settings.revealRoleOnDeath);
     const counts = this.phase === "vote" || this.phase === "defense" || this.phase === "result" ? this.tally() : {};
     const step = this.step;
@@ -943,6 +988,7 @@ export class Game {
           : me?.role === "doctor" ? this.doctorPick
           : me?.role === "detective" ? (this.detectivePicks[me.id] ?? null)
           : me?.role === "vigilante" ? this.vigilantePick
+          : me?.role === "bomber" ? this.bomberPick
           : null,
         mafiaPicks: isMafiaRole(me?.role) && this.step === "mafia" ? this.mafiaPicks : {},
       },

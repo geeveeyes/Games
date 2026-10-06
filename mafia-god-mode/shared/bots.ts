@@ -54,7 +54,7 @@ function tasks(room: RoomData, g: Game, t: Timing): { id: string; bot: Player; m
       const mine = g.actors();
       const humansMafia = isMafiaRole(b.role) ? mine.filter((m) => !m.bot) : [];
       const waitingOnHuman = humansMafia.length > 0 && humansMafia.every((m) => !g.mafiaPicks[m.id]);
-      const already = isMafiaRole(b.role) ? g.mafiaPicks[b.id] : b.role === "doctor" ? g.doctorPick : b.role === "vigilante" ? g.vigilantePick : g.detectivePicks[b.id];
+      const already = isMafiaRole(b.role) ? g.mafiaPicks[b.id] : b.role === "doctor" ? g.doctorPick : b.role === "vigilante" ? g.vigilantePick : b.role === "bomber" ? g.bomberPick : g.detectivePicks[b.id];
       if (!waitingOnHuman && !already) out.push({ id: `night:${b.id}`, bot: b, min: t.botNightMinMs, max: t.botNightMaxMs });
     }
     if (g.phase === "vote" && b.alive && !g.votes[b.id]) {
@@ -128,6 +128,10 @@ function act(room: RoomData, g: Game, id: string, bot: Player, rng: Rng) {
       if (target) g.nightAction(bot.id, target.id);
     } else if (bot.role === "doctor") {
       g.nightAction(bot.id, pickOf(pool, rng).id);
+    } else if (bot.role === "bomber") {
+      // Usually waits; sometimes takes someone with it, never on the first night.
+      const boom = g.round >= 2 && rng() < 0.25;
+      g.nightAction(bot.id, boom ? pickOf(pool, rng).id : "skip");
     } else if (bot.role === "vigilante") {
       // Mostly hold fire. The single bullet is rarely spent, and not on the first night.
       const shoot = g.round >= 2 && rng() < 0.3;

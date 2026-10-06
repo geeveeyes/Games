@@ -44,7 +44,7 @@ async function play(players: number, settings: Record<string, unknown>) {
 }
 
 describe("whole games", () => {
-  const all = { useDoctor: true, useDetective: true, useGodfather: true, useJester: true, useVigilante: true, revealRoleOnDeath: true };
+  const all = { useDoctor: true, useDetective: true, useGodfather: true, useJester: true, useVigilante: true, useBomber: true, revealRoleOnDeath: true };
   for (const lang of ["en", "hi", "ta"]) {
     for (const [n, style] of [[5, "quick"], [6, "trial"], [8, "trial"], [10, "quick"], [10, "trial"]] as const) {
       it(`${n} players, ${style} vote, ${lang}: finishes with a winner`, async () => {
