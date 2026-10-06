@@ -7,6 +7,8 @@ import { keepAwake, plain, useNarrator } from "./narrator";
 import { Admin } from "./Admin";
 import { inviteUrl, readInvite, tvUrl } from "./invite";
 import { QrCode, ShareBar, useInstall } from "./Invite";
+import { loadHistory, recordGame } from "./history";
+import { HistoryModal, SummaryPanel } from "./Summary";
 import { FeedbackModal, type FeedbackContext } from "./Feedback";
 import { RulesModal } from "./Rules";
 
@@ -34,6 +36,7 @@ export function App() {
   const [invite] = useState(() => readInvite(location.search));
   const [rules, setRules] = useState(false);
   const [feedback, setFeedback] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [admin, setAdmin] = useState(() => location.hash === "#admin");
   useEffect(() => {
     const h = () => setAdmin(location.hash === "#admin");
@@ -44,6 +47,11 @@ export function App() {
   useEffect(() => {
     if (session) keepAwake();
   }, [session]);
+
+  // Keep a private record of each finished game on this device (once per game).
+  useEffect(() => {
+    if (room.view && session?.mode === "player") recordGame(room.view);
+  }, [room.view?.phase, room.view?.gameNo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const enter = (s: Session) => {
     saveSession(s);
@@ -71,8 +79,9 @@ export function App() {
   if (!session || !room.view) {
     return (
       <Shell onRules={() => setRules(true)} onFeedback={() => setFeedback(true)}>
-        {session ? <p className="muted center">Connecting to room {session.code}…</p> : <Home onEnter={enter} onRules={() => setRules(true)} invite={invite} />}
+        {session ? <p className="muted center">Connecting to room {session.code}…</p> : <Home onEnter={enter} onRules={() => setRules(true)} onHistory={() => setHistoryOpen(true)} invite={invite} />}
         {rules && <RulesModal onClose={() => setRules(false)} />}
+        {historyOpen && <HistoryModal onClose={() => setHistoryOpen(false)} />}
         {feedback && <FeedbackModal onClose={() => setFeedback(false)} context={fbContext} />}
         {session && room.error && (
           <div className="stack">
@@ -126,7 +135,7 @@ function Shell({ children, code, right, onRules, onFeedback }: { children: React
 /** A game that has started only lets its own players back in, by the same name. */
 const joinHint = (e: string) => (/already started/.test(e) ? `${e} Were you playing? Enter the same name you used before to take your seat back.` : e);
 const MODE_LABEL: Record<string, string> = { table: "TV or laptop", phones: "Phones only", remote: "Remote" };
-function Home({ onEnter, onRules, invite }: { onEnter: (s: Session) => void; onRules: () => void; invite: { room?: string; tv?: string } }) {
+function Home({ onEnter, onRules, onHistory, invite }: { onEnter: (s: Session) => void; onRules: () => void; onHistory: () => void; invite: { room?: string; tv?: string } }) {
   const [name, setName] = useState(savedName());
   const [code, setCode] = useState(invite.room ?? "");
   const install = useInstall();
@@ -253,7 +262,10 @@ function Home({ onEnter, onRules, invite }: { onEnter: (s: Session) => void; onR
         <button className="btn ghost" disabled={busy || code.length !== 4} onClick={() => watch()}>Show on TV</button>
       </div>
       {err && <p className="error" role="alert">{err}</p>}
-      <button className="linkbtn" onClick={onRules}>New to Mafia? Read the rules</button>
+      <div className="linkrow">
+        <button className="linkbtn" onClick={onRules}>New to Mafia? Read the rules</button>
+        <button className="linkbtn" onClick={onHistory}>My games{loadHistory().length ? ` (${loadHistory().length})` : ""}</button>
+      </div>
       {install.canInstall && <button className="btn ghost" onClick={install.install}>Install the app on this device</button>}
       {install.showIosHint && <p className="muted small center">On iPhone or iPad: tap Share, then Add to Home Screen.</p>}
     </div>
@@ -566,8 +578,9 @@ function PlayerScreen({ v, act, now, onLeave, onFeedback }: { v: ClientView; act
           <div className={`card revealed ${v.winner === "town" ? "detective" : v.winner === "jester" ? "jester" : "mafia"}`}>
             <span className="tag">Winners</span>
             <span className="big">{v.winner === "town" ? "Town" : v.winner === "jester" ? "Jester" : "Mafia"}</span>
-            <span className="tag">{v.lines.at(-1)?.text}</span>
+            <span className="tag">{plain(v.lines.at(-1)?.text ?? "")}</span>
           </div>
+          <SummaryPanel v={v} />
           <Roster players={v.players} showRoles />
           {me.isHost ? (
             <button className="btn" onClick={() => act({ action: "rematch" })}>Play again</button>

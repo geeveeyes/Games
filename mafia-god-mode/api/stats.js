@@ -18,57 +18,16 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// functions/feedback.ts
-var feedback_exports = {};
-__export(feedback_exports, {
+// functions/stats.ts
+var stats_exports = {};
+__export(stats_exports, {
   default: () => handler
 });
-module.exports = __toCommonJS(feedback_exports);
+module.exports = __toCommonJS(stats_exports);
 
 // shared/feedback.ts
 var import_node_crypto = require("node:crypto");
-var FEEDBACK_TAGS = ["narrator", "voting", "bots", "rooms", "looks", "bugs", "ideas"];
-var CONTEXT_KEYS = ["room", "phase", "round", "mode", "voteStyle", "visibility", "players", "bots", "isHost", "narrator", "screen", "viewport", "touch", "version"];
-var MAX_TEXT = 2e3;
-var PER_PERSON_PER_HOUR = 6;
-var ALL_PER_HOUR = 800;
 var hash = (s) => (0, import_node_crypto.createHash)("sha256").update(s).digest("hex").slice(0, 10);
-function cleanContext(raw) {
-  const out = {};
-  if (!raw || typeof raw !== "object") return out;
-  for (const k of CONTEXT_KEYS) {
-    const v = raw[k];
-    if (typeof v === "string") out[k] = v.slice(0, 40);
-    else if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
-    else if (typeof v === "boolean") out[k] = v;
-  }
-  return out;
-}
-async function submitFeedback(store, input, now = Date.now()) {
-  if (!input || typeof input !== "object") return { ok: false, error: "Bad request.", status: 400 };
-  if (input.website) return { ok: true, id: "ignored" };
-  const text = typeof input.text === "string" ? input.text.replace(/\r\n/g, "\n").trim().slice(0, MAX_TEXT) : "";
-  const ratingRaw = Number(input.rating);
-  const rating = Number.isInteger(ratingRaw) && ratingRaw >= 1 && ratingRaw <= 5 ? ratingRaw : null;
-  if (!text && rating === null) return { ok: false, error: "Write a few words or pick a rating.", status: 400 };
-  const tags = Array.isArray(input.tags) ? [...new Set(input.tags)].filter((t) => FEEDBACK_TAGS.includes(t)) : [];
-  const who = hash(typeof input.token === "string" && input.token ? input.token : "anonymous");
-  if (await store.hit(`fb:who:${who}`, 3600) > PER_PERSON_PER_HOUR) {
-    return { ok: false, error: "Thanks, you have sent a lot already. Please try again in a while.", status: 429 };
-  }
-  if (await store.hit("fb:all", 3600) > ALL_PER_HOUR) return { ok: false, error: "Feedback is busy right now. Please try again later.", status: 429 };
-  const item = {
-    id: `${now.toString(36)}-${hash(`${who}${now}${Math.random()}`).slice(0, 6)}`,
-    at: now,
-    text,
-    rating,
-    tags,
-    who,
-    context: cleanContext(input.context)
-  };
-  await store.pushFeedback(item);
-  return { ok: true, id: item.id };
-}
 function isAdmin(authHeader, adminKey) {
   if (!adminKey || adminKey.length < 12) return false;
   const given = (authHeader ?? "").replace(/^Bearer\s+/i, "");
@@ -76,14 +35,32 @@ function isAdmin(authHeader, adminKey) {
   const b = Buffer.from(hash(adminKey));
   return a.length === b.length && (0, import_node_crypto.timingSafeEqual)(a, b);
 }
-async function listFeedback(store, limit = 500) {
-  return (await store.listFeedback(Math.min(Math.max(limit, 1), 2e3))).sort((a, b) => b.at - a.at);
-}
-var csvCell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-function toCsv(items) {
-  const head = ["id", "at_iso", "rating", "tags", "text", "who", "context_json"];
-  const rows = items.map((i) => [i.id, new Date(i.at).toISOString(), i.rating ?? "", i.tags.join("|"), i.text, i.who, JSON.stringify(i.context)].map(csvCell).join(","));
-  return [head.join(","), ...rows].join("\n");
+
+// shared/stats.ts
+var count = (xs) => xs.reduce((m, x) => (m[x] = (m[x] ?? 0) + 1, m), {});
+var avg = (xs) => xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length * 10) / 10 : 0;
+function aggregate(records, now = Date.now()) {
+  const day = 24 * 3600 * 1e3;
+  const perDay = [];
+  for (let i = 13; i >= 0; i--) {
+    const start = new Date(now - i * day);
+    const label = start.toISOString().slice(0, 10);
+    perDay.push({ day: label, games: records.filter((r) => new Date(r.at).toISOString().slice(0, 10) === label).length });
+  }
+  return {
+    games: records.length,
+    last7days: records.filter((r) => now - r.at < 7 * day).length,
+    avgPlayers: avg(records.map((r) => r.players)),
+    avgBots: avg(records.map((r) => r.bots)),
+    avgRounds: avg(records.map((r) => r.rounds)),
+    gamesWithBots: records.filter((r) => r.bots > 0).length,
+    winners: count(records.map((r) => r.winner)),
+    languages: count(records.map((r) => r.language)),
+    modes: count(records.map((r) => r.mode)),
+    voteStyles: count(records.map((r) => r.voteStyle)),
+    optionalRoles: count(records.flatMap((r) => r.roles)),
+    perDay
+  };
 }
 
 // shared/store.ts
@@ -221,25 +198,14 @@ function defaultStore() {
   return shared;
 }
 
-// functions/feedback.ts
+// functions/stats.ts
 async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
+  if (req.method !== "GET") return res.status(405).json({ ok: false, error: "Use GET." });
+  if (!isAdmin(req.headers.authorization, process.env.FEEDBACK_ADMIN_KEY)) return res.status(403).json({ ok: false, error: "Not allowed." });
   try {
-    const store = defaultStore();
-    if (req.method === "POST") {
-      const out = await submitFeedback(store, req.body);
-      return res.status(out.ok ? 200 : out.status).json(out);
-    }
-    if (req.method === "GET") {
-      if (!isAdmin(req.headers.authorization, process.env.FEEDBACK_ADMIN_KEY)) return res.status(403).json({ ok: false, error: "Not allowed." });
-      const items = await listFeedback(store, Number(req.query.limit) || 500);
-      if (req.query.format === "csv") {
-        res.setHeader("Content-Type", "text/csv; charset=utf-8");
-        return res.status(200).send(toCsv(items));
-      }
-      return res.status(200).json({ ok: true, items });
-    }
-    return res.status(405).json({ ok: false, error: "Use POST or GET." });
+    const records = await defaultStore().listGames(5e3);
+    return res.status(200).json({ ok: true, stats: aggregate(records), recent: records.slice(-20).reverse() });
   } catch (e) {
     return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : "Server error." });
   }

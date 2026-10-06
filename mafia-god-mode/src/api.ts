@@ -70,6 +70,8 @@ export async function callRooms(): Promise<RoomSummary[]> {
   }
 }
 
+const STALE_TAP = /^(Voting is not open|It is not (your turn|night)|Not time to confirm roles)/;
+
 /** Polls the room once a second and exposes an `act` helper that refreshes immediately. */
 export function useRoom(session: Session | null, onGone: () => void) {
   const [view, setView] = useState<ClientView | null>(null);
@@ -101,6 +103,8 @@ export function useRoom(session: Session | null, onGone: () => void) {
       setFailures(failCount.current);
       if (!fromTap) return false; // the offline banner explains it; do not also show a red error
     }
+    // A tap that lands just as the game moves on ("voting is not open" and the like) is not worth a warning: the next refresh shows the new state.
+    if (fromTap && STALE_TAP.test(r.error)) return false;
     if (fromTap) stickyUntil.current = Date.now() + 6000;
     setError(r.error);
     if (r.status === 404) onGone();

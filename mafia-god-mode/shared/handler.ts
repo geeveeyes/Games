@@ -1,5 +1,6 @@
 import { load, type RoomData, type Action, type ApiResponse, type RoomSummary, isListed, summarize, DEFAULT_TIMING, HEARTBEAT_MS, type Timing, applyAction, buildView, heartbeat, newRoom, randomCode, tick } from "./room";
 import type { Result } from "./game";
+import { recordOf } from "./stats";
 import type { Store } from "./store";
 
 const err = (error: string, status = 400): ApiResponse => ({ ok: false, error, status });
@@ -11,6 +12,15 @@ async function syncIndex(store: Store, room: RoomData) {
     room.listed = listed;
     await store.index(room.code, listed);
   }
+}
+
+/** When a game ends, save one anonymous record of it (once per game). */
+async function syncRecord(store: Store, room: RoomData, now: number) {
+  const g = load(room);
+  if (g.phase !== "over" || !g.summary || room.recordedGame === g.gameNo) return;
+  room.recordedGame = g.gameNo;
+  const rec = recordOf(g, now);
+  if (rec) await store.pushGame(rec).catch(() => {}); // stats must never break a game
 }
 
 /** The open-rooms directory. Stale entries (expired, started, or made private) are cleaned up as they are found. */
@@ -88,6 +98,7 @@ export async function handle(
       heartbeat(room, token, now);
       if (a.action === "join" && token) room.seen[token] = now;
       await syncIndex(store, room);
+      await syncRecord(store, room, now);
       await store.set(code, room);
       return { ok: true, code, view: buildView(room, token, now) };
     }

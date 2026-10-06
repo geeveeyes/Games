@@ -54,6 +54,7 @@ export interface RoomData {
   bots?: BotMem;
   botNext?: number | null; // earliest time a bot wants to act
   listed?: boolean; // currently in the open-rooms directory
+  recordedGame?: number; // the last game number saved to the anonymous stats
   updatedAt: number;
 }
 

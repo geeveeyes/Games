@@ -52,6 +52,12 @@ The host chooses who can join in the lobby, much like a Discord or Slack channel
 
 The host can name the room, and can remove anyone from the lobby (a removed person cannot rejoin that room). Rooms leave the list when the game starts, when set to Private, or when they expire. The directory is a Redis set (`mgm:open`) next to the room documents; stale entries clean themselves up when the list is read. Because anyone on the internet can see open rooms, keep rooms Private unless you want visitors.
 
+## Replay value
+
+- **Game summary:** when a game ends, everyone sees fun awards (Sharp eye, Guardian angel, Best liar, Most suspected, Dead eye, Friendly fire, Chatterbox, Perfect fool, Last one standing) and a "What happened" timeline with every night and day.
+- **My games:** a private history and stats (games, wins, streaks, survival, favourite role, awards) kept only in the browser on that device. Nothing is sent anywhere. Open it from the home screen.
+- **Usage stats for the owner:** one anonymous record per finished game (size, bots, winner, language, mode, options; no names, codes or browser ids) goes to Redis. Open `/#admin`, enter the admin key, and use the **Games** tab for totals, win rates, option popularity and games per day. This is the evidence for deciding what to build or charge for.
+
 ## Eliminated players
 
 Players who are out get a **ghost chat** that only other eliminated players can see (so they can talk the game through without spoiling it) and can see who voted for whom during votes. Everyone sees everything once the game is over.
@@ -70,7 +76,7 @@ One person plus bots can play a full game: `npm run e2e:solo`.
 ## Tests
 
 - `npm test`: engine, bots, rooms, feedback, Redis protocol, **saved-room compatibility** (rooms saved by older versions still load and work) and **every lobby setting**.
-- Browser tests (need Chromium; start `MGM_FAST=1 MGM_SEED_OLD_ROOM=1 npx tsx dev-server.ts` and `npx vite`): `npm run e2e` (5 players + TV), `e2e:solo` (one person + bots, also checks audio stops on leaving and chat typing), `e2e:settings` (every lobby control, fresh and old-format room), `e2e:typing` (text boxes keep focus while the room refreshes), `e2e:roles` (all optional roles on, ghost chat), `e2e:clips` (recorded clips play, names fall back to the device voice, Hindi narration), `e2e:invite` (QR decodes to the link, link joins, TV link, installable files; needs `vite preview` on :4173), `e2e:reliability` (offline banner, host handover, taking a seat back; start the API with `MGM_HEARTBEAT_MS=1000 MGM_AWAY_MS=4000`), `e2e:narrator` (turning the narrator on mid-game speaks immediately and starts the music).
+- Browser tests (need Chromium; start `MGM_FAST=1 MGM_SEED_OLD_ROOM=1 npx tsx dev-server.ts` and `npx vite`): `npm run e2e` (5 players + TV), `e2e:solo` (one person + bots, also checks audio stops on leaving and chat typing), `e2e:settings` (every lobby control, fresh and old-format room), `e2e:typing` (text boxes keep focus while the room refreshes), `e2e:history` (game summary, My games, admin Games tab; needs `FEEDBACK_ADMIN_KEY`), `e2e:roles` (all optional roles on, ghost chat), `e2e:clips` (recorded clips play, names fall back to the device voice, Hindi narration), `e2e:invite` (QR decodes to the link, link joins, TV link, installable files; needs `vite preview` on :4173), `e2e:reliability` (offline banner, host handover, taking a seat back; start the API with `MGM_HEARTBEAT_MS=1000 MGM_AWAY_MS=4000`), `e2e:narrator` (turning the narrator on mid-game speaks immediately and starts the music).
 
 ## Run locally
 

@@ -172,3 +172,15 @@ textarea { font: 1rem var(--body); padding: 12px; border-radius: 8px; border: 1p
 .card.revealed.vigilante { background: linear-gradient(160deg, #2e2a12, #17150a); border-color: #6b6224; color: #f0e2a0; }
 .card.revealed.jester { background: linear-gradient(160deg, #2a1a40, #130c20); border-color: #6a4aa0; color: #d8c4f5; }
 .stack.left { text-align: left; align-items: stretch; }
+
+.linkrow { display: flex; justify-content: center; gap: 18px; flex-wrap: wrap; }
+.awards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
+.award { display: flex; flex-direction: column; gap: 2px; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.award.mine { border-color: var(--lamp); background: color-mix(in srgb, var(--lamp) 12%, var(--panel)); }
+.award b { overflow-wrap: anywhere; }
+.timeline { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.timeline summary { cursor: pointer; color: var(--lamp); }
+.timeline ol { margin-top: 10px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.tile { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.tile b { font-family: var(--display); font-size: 1.25rem; letter-spacing: .03em; }

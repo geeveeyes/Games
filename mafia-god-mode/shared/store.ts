@@ -1,4 +1,5 @@
 import type { FeedbackItem } from "./feedback";
+import type { GameRecord } from "./stats";
 import type { RoomData } from "./room";
 
 /** Room storage. Redis (Upstash REST) in production, memory for local dev and tests. */
@@ -12,6 +13,8 @@ export interface Store {
   getMany(codes: string[]): Promise<(RoomData | null)[]>;
   pushFeedback(item: FeedbackItem): Promise<void>;
   listFeedback(limit: number): Promise<FeedbackItem[]>;
+  pushGame(rec: GameRecord): Promise<void>;
+  listGames(limit: number): Promise<GameRecord[]>;
   /** Count a hit against a key within a rolling window and return the new count (for rate limits). */
   hit(key: string, windowSec: number): Promise<number>;
 }
@@ -22,6 +25,7 @@ export class MemoryStore implements Store {
   private rooms = new Map<string, string>();
   private listed = new Set<string>();
   private feedback: FeedbackItem[] = [];
+  private games: GameRecord[] = [];
   private hits = new Map<string, { n: number; until: number }>();
   private chains = new Map<string, Promise<void>>();
   async get(code: string) {
@@ -33,6 +37,12 @@ export class MemoryStore implements Store {
   }
   async pushFeedback(item: FeedbackItem) {
     this.feedback.push(item);
+  }
+  async pushGame(rec: GameRecord) {
+    this.games.push(rec);
+  }
+  async listGames(limit: number) {
+    return this.games.slice(-limit);
   }
   async listFeedback(limit: number) {
     return this.feedback.slice(-limit);
@@ -82,6 +92,14 @@ export class RedisStore implements Store {
   }
   async set(code: string, room: RoomData) {
     await this.cmd("SET", `mgm:room:${code}`, JSON.stringify(room), "EX", TTL_SEC);
+  }
+  async pushGame(rec: GameRecord) {
+    await this.cmd("RPUSH", "mgm:games", JSON.stringify(rec));
+    await this.cmd("LTRIM", "mgm:games", -5000, -1);
+  }
+  async listGames(limit: number) {
+    const raws = (await this.cmd<string[]>("LRANGE", "mgm:games", -limit, -1)) ?? [];
+    return raws.map((r) => JSON.parse(r) as GameRecord);
   }
   async pushFeedback(item: FeedbackItem) {
     await this.cmd("RPUSH", "mgm:feedback", JSON.stringify(item));

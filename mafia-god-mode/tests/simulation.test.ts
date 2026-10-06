@@ -8,7 +8,9 @@ import { MemoryStore } from "../shared/store";
 async function play(players: number, settings: Record<string, unknown>) {
   const store = new MemoryStore();
   let now = 5_000_000;
-  const call = (a: any) => handle(a, store, now, INSTANT_TIMING);
+  // Bots answer instantly, but the one person needs the real waits (an instant night step would expire before they pick).
+  const timing = { ...INSTANT_TIMING, nightStepMaxMs: 60_000, revealMaxMs: 60_000 };
+  const call = (a: any) => handle(a, store, now, timing);
   const c = await call({ action: "create", token: "me", name: "Venkat" });
   if (!c.ok) throw new Error(c.error);
   await call({ action: "settings", code: c.code, token: "me", patch: settings });
@@ -23,16 +25,20 @@ async function play(players: number, settings: Record<string, unknown>) {
     const v = r.view;
     last = v;
     if (v.phase === "over") return v;
-    if (v.phase === "reveal") await call({ action: "ack", code: c.code, token: "me" });
+    let acted = false;
+    if (v.phase === "reveal") { await call({ action: "ack", code: c.code, token: "me" }); acted = true; }
     if (v.phase === "night" && v.you?.alive && v.night.yourPick === null) {
+      acted = true;
       if (v.night.step === "vigilante") await call({ action: "night", code: c.code, token: "me", target: "skip" });
       else if (v.night.yourTargets.length) await call({ action: "night", code: c.code, token: "me", target: v.night.yourTargets[0] });
+      else acted = false;
     }
     if (v.phase === "vote" && v.you?.alive && !v.vote.yourVote) {
       const options = v.players.filter((p: any) => p.alive && p.id !== "me" && (v.vote.stage === "poll" || v.defendants.includes(p.id)));
+      acted = true;
       await call({ action: "vote", code: c.code, token: "me", target: options[0]?.id ?? "skip" });
     }
-    now += 70_000; // jump past timers
+    if (!acted) now += 70_000; // nothing for the person to do: jump past the timers
   }
   throw new Error(`game did not finish; last phase ${last?.phase}, round ${last?.round}`);
 }

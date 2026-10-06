@@ -300,6 +300,10 @@ var Game = class _Game {
   // a player id, or "skip" for holding fire
   vigilanteUsed = false;
   lastNightDeathIds = [];
+  gameNo = 0;
+  history = [];
+  talkCounts = {};
+  summary = null;
   lastSaved = null;
   // day
   votes = {};
@@ -340,6 +344,10 @@ var Game = class _Game {
   narrate(text, cue = null) {
     this.lines.push({ seq: ++this.seq, text, cue, lang: this.settings.language });
     if (this.lines.length > 40) this.lines.shift();
+  }
+  log(e) {
+    this.history.push(e);
+    if (this.history.length > 400) this.history.shift();
   }
   /** One line of narration in the room's language. */
   t(key, vars = {}) {
@@ -447,6 +455,7 @@ var Game = class _Game {
     const clean = text.replace(/\s+/g, " ").trim().slice(0, 140);
     if (!clean) return fail("Type something to say.");
     this.talk.push({ seq: ++this.talkSeq, id: me.id, name: me.name, text: clean, bot: !!me.bot, ghost });
+    if (!ghost) this.talkCounts[me.id] = (this.talkCounts[me.id] ?? 0) + 1;
     if (this.talk.length > 40) this.talk.shift();
     return ok();
   }
@@ -527,6 +536,10 @@ var Game = class _Game {
     this.lastSaved = null;
     this.vigilanteUsed = false;
     this.lastNightDeathIds = [];
+    this.gameNo += 1;
+    this.history = [];
+    this.talkCounts = {};
+    this.summary = null;
     this.lines = [];
     this.phase = "reveal";
     this.narrate(this.t("deal"), "deal");
@@ -610,6 +623,7 @@ var Game = class _Game {
       this.detectivePick = targetId;
       const target = this.player(targetId);
       (this.notes[playerId] ??= []).push({ night: this.round, targetId, isMafia: target.role === "mafia" });
+      this.log({ round: this.round, kind: "investigated", by: playerId, ids: [targetId], flag: target.role === "mafia" });
     }
     return ok();
   }
@@ -662,6 +676,9 @@ var Game = class _Game {
     const attacked = [...new Set([target, shot].filter((x) => !!x))];
     const dead = attacked.filter((id) => id !== this.doctorPick).map((id) => this.player(id));
     this.lastSaved = this.doctorPick;
+    for (const id of attacked) if (id === this.doctorPick) this.log({ round: this.round, kind: "saved", ids: [id], by: this.players.find((p) => p.role === "doctor")?.id });
+    if (target && target !== this.doctorPick) this.log({ round: this.round, kind: "night-kill", ids: [target] });
+    if (shot) this.log({ round: this.round, kind: "vigilante-shot", ids: [shot], by: this.players.find((p) => p.role === "vigilante")?.id, flag: shot !== this.doctorPick });
     for (const v2 of dead) v2.alive = false;
     this.lastNightDeathIds = dead.map((d) => d.id);
     this.lastNightDeathId = dead[0]?.id ?? null;
@@ -729,6 +746,7 @@ var Game = class _Game {
   /** Close the current vote. In trial style the first vote picks defendants; the final vote eliminates. */
   resolveVote() {
     if (this.phase !== "vote") return;
+    this.log({ round: this.round, kind: "vote", stage: this.voteStage, votes: { ...this.votes } });
     if (this.voteStage === "poll") return this.resolvePoll();
     const counts = this.tally();
     const entries = Object.entries(counts);
@@ -745,6 +763,7 @@ var Game = class _Game {
       text = this.t("elim", { name: eliminated.name, votes: this.t(top === 1 ? "votes.one" : "votes.many", { n: top }) }) + role;
     }
     this.lastResult = { text, eliminatedId: eliminated?.id ?? null };
+    this.log(eliminated ? { round: this.round, kind: "eliminated", ids: [eliminated.id] } : { round: this.round, kind: "no-elimination" });
     this.phase = "result";
     this.narrate(text, eliminated ? "elim" : "noelim");
     if (eliminated?.role === "jester") {
@@ -759,6 +778,7 @@ var Game = class _Game {
     const ranked = Object.entries(counts).filter(([id]) => id !== "skip").sort((a, b) => b[1] - a[1]);
     if (!ranked.length || ranked[0][1] <= skips) {
       this.lastResult = { text: this.t("noaccuse"), eliminatedId: null };
+      this.log({ round: this.round, kind: "no-elimination" });
       this.phase = "result";
       this.narrate(this.lastResult.text, "noelim");
       return;
@@ -773,6 +793,7 @@ var Game = class _Game {
     }
     this.defendants = chosen;
     this.defenseIdx = 0;
+    this.log({ round: this.round, kind: "accused", ids: [...chosen] });
     this.phase = "defense";
     const names = chosen.map((id) => this.player(id).name);
     const intro = names.length === 2 ? this.t("defense.two", { a: names[0], b: names[1] }) : this.t("defense.one", { a: names[0] });
@@ -806,6 +827,62 @@ var Game = class _Game {
     this.winner = w;
     this.phase = "over";
     this.narrate(text, cue);
+    this.summary = this.buildSummary(w);
+  }
+  /** Who did what, plus a few fun awards. Built once, when the game ends. */
+  buildSummary(winner) {
+    const name = (id) => this.player(id)?.name ?? "someone";
+    const awards = [];
+    const add = (a) => a.winners.length && awards.push(a);
+    const received = {};
+    for (const e of this.history) if (e.kind === "vote") {
+      for (const t of Object.values(e.votes ?? {})) if (t !== "skip") received[t] = (received[t] ?? 0) + 1;
+    }
+    if (winner === "jester") {
+      add({ id: "perfect-fool", title: "Perfect fool", detail: "Fooled the whole village into voting them out.", winners: this.players.filter((p) => p.role === "jester").map((p) => p.id) });
+    }
+    const found = this.history.filter((e) => e.kind === "investigated" && e.flag);
+    if (found.length) {
+      const first = found[0];
+      add({ id: "sharp-eye", title: "Sharp eye", detail: `Found a Mafia member on night ${first.round}.`, winners: [...new Set(found.map((e) => e.by).filter(Boolean))] });
+    }
+    const saves = this.history.filter((e) => e.kind === "saved");
+    if (saves.length) {
+      add({ id: "guardian-angel", title: "Guardian angel", detail: `Saved ${saves.length === 1 ? "someone" : `${saves.length} lives`} from a certain death.`, winners: [...new Set(saves.map((e) => e.by).filter(Boolean))] });
+    }
+    const shots = this.history.filter((e) => e.kind === "vigilante-shot");
+    for (const sh of shots) {
+      const target = this.player(sh.ids[0]);
+      if (!sh.by || !target) continue;
+      add(isMafiaRole(target.role) ? { id: "dead-eye", title: "Dead eye", detail: `Shot a Mafia member (${target.name}) on night ${sh.round}.`, winners: [sh.by] } : { id: "friendly-fire", title: "Friendly fire", detail: `Shot an innocent (${target.name}) on night ${sh.round}.`, winners: [sh.by] });
+    }
+    const totalVotes = Object.values(received).reduce((a, b) => a + b, 0);
+    const team = this.players.filter((p) => isMafiaRole(p.role));
+    if (team.length && totalVotes >= 4) {
+      const least = Math.min(...team.map((p) => received[p.id] ?? 0));
+      const liars = team.filter((p) => (received[p.id] ?? 0) === least);
+      add({ id: "best-liar", title: "Best liar", detail: least === 0 ? "Never received a single vote." : `Only ${least} vote${least === 1 ? "" : "s"} against them all game.`, winners: liars.map((p) => p.id) });
+    }
+    const most = Math.max(0, ...Object.values(received));
+    if (most >= 3) {
+      add({ id: "most-suspected", title: "Most suspected", detail: `${most} votes against them across the game.`, winners: Object.entries(received).filter(([, n]) => n === most).map(([id]) => id) });
+    }
+    const humanTalk = Object.entries(this.talkCounts).filter(([id]) => !this.player(id)?.bot);
+    const topTalk = Math.max(0, ...humanTalk.map(([, n]) => n));
+    if (topTalk >= 3) {
+      add({ id: "chatterbox", title: "Chatterbox", detail: `${topTalk} messages at the table.`, winners: humanTalk.filter(([, n]) => n === topTalk).map(([id]) => id) });
+    }
+    const standing = this.alive();
+    if (standing.length === 1) add({ id: "last-standing", title: "Last one standing", detail: "The only player left alive.", winners: [standing[0].id] });
+    void name;
+    return {
+      gameNo: this.gameNo,
+      rounds: this.round,
+      winner,
+      players: this.players.map((p) => ({ id: p.id, name: p.name, role: p.role, alive: p.alive, bot: !!p.bot })),
+      timeline: this.history.filter((e) => e.kind !== "vote"),
+      awards: awards.slice(0, 6)
+    };
   }
   rematch() {
     if (this.phase !== "over") return fail("The game is not over.");
@@ -822,6 +899,7 @@ var Game = class _Game {
     this.vigilanteUsed = false;
     this.vigilantePick = null;
     this.lastNightDeathIds = [];
+    this.summary = null;
     for (const p of this.players) {
       p.role = null;
       p.alive = true;
@@ -882,6 +960,8 @@ var Game = class _Game {
         eligible: this.alive().length
       },
       result: this.lastResult,
+      summary: this.phase === "over" ? this.summary : null,
+      gameNo: this.gameNo,
       defendants: this.defendants,
       defenseIdx: this.defenseIdx,
       skipToken: this.skipToken(),
@@ -1341,6 +1421,23 @@ function summarize(room) {
   };
 }
 
+// shared/stats.ts
+function recordOf(g, now) {
+  if (!g.summary) return null;
+  const roles = [...new Set(g.summary.players.map((p) => p.role))].filter((r) => ["godfather", "jester", "vigilante"].includes(r));
+  return {
+    at: now,
+    rounds: g.summary.rounds,
+    winner: g.summary.winner,
+    players: g.players.length,
+    bots: g.players.filter((p) => p.bot).length,
+    roles,
+    language: g.settings.language,
+    mode: g.settings.mode,
+    voteStyle: g.settings.voteStyle
+  };
+}
+
 // shared/handler.ts
 var err = (error, status = 400) => ({ ok: false, error, status });
 async function syncIndex(store, room) {
@@ -1349,6 +1446,14 @@ async function syncIndex(store, room) {
     room.listed = listed;
     await store.index(room.code, listed);
   }
+}
+async function syncRecord(store, room, now) {
+  const g = load(room);
+  if (g.phase !== "over" || !g.summary || room.recordedGame === g.gameNo) return;
+  room.recordedGame = g.gameNo;
+  const rec = recordOf(g, now);
+  if (rec) await store.pushGame(rec).catch(() => {
+  });
 }
 async function handleRooms(store) {
   const codes = (await store.openCodes()).slice(0, 60);
@@ -1411,6 +1516,7 @@ async function handle(a, store, now = Date.now(), timing = DEFAULT_TIMING, rng =
       heartbeat(room, token, now);
       if (a.action === "join" && token) room.seen[token] = now;
       await syncIndex(store, room);
+      await syncRecord(store, room, now);
       await store.set(code, room);
       return { ok: true, code, view: buildView(room, token, now) };
     }
@@ -1427,6 +1533,7 @@ var MemoryStore = class {
   rooms = /* @__PURE__ */ new Map();
   listed = /* @__PURE__ */ new Set();
   feedback = [];
+  games = [];
   hits = /* @__PURE__ */ new Map();
   chains = /* @__PURE__ */ new Map();
   async get(code) {
@@ -1438,6 +1545,12 @@ var MemoryStore = class {
   }
   async pushFeedback(item) {
     this.feedback.push(item);
+  }
+  async pushGame(rec) {
+    this.games.push(rec);
+  }
+  async listGames(limit) {
+    return this.games.slice(-limit);
   }
   async listFeedback(limit) {
     return this.feedback.slice(-limit);
@@ -1491,6 +1604,14 @@ var RedisStore = class {
   }
   async set(code, room) {
     await this.cmd("SET", `mgm:room:${code}`, JSON.stringify(room), "EX", TTL_SEC);
+  }
+  async pushGame(rec) {
+    await this.cmd("RPUSH", "mgm:games", JSON.stringify(rec));
+    await this.cmd("LTRIM", "mgm:games", -5e3, -1);
+  }
+  async listGames(limit) {
+    const raws = await this.cmd("LRANGE", "mgm:games", -limit, -1) ?? [];
+    return raws.map((r) => JSON.parse(r));
   }
   async pushFeedback(item) {
     await this.cmd("RPUSH", "mgm:feedback", JSON.stringify(item));

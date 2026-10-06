@@ -26,6 +26,10 @@ Script lives in `shared/game.ts` (`narrate(text, cue)`; `|` = short pause, `||` 
 
 `shared/feedback.ts` (validation, rate limit, CSV), `functions/feedback.ts` (route), `src/Feedback.tsx` (form), `src/Admin.tsx` (`/#admin`). Redis list `mgm:feedback`; `docs/feedback.sql` is the SQL target. Needs `FEEDBACK_ADMIN_KEY` in Vercel to read entries. Browser test: `e2e/feedback.mjs`. `npm run build:api` bundles both `api/room.js` and `api/feedback.js`.
 
+## Summary, history and stats
+
+`Game.history` (events), `talkCounts` and `buildSummary` (awards) run as the game goes; `summary` is exposed in the view only when the game is over. `src/history.ts` keeps the private per-device history (localStorage). `shared/stats.ts` + `handler.syncRecord` save one anonymous record per finished game (`room.recordedGame` stops duplicates); `functions/stats.ts` serves `/api/stats` behind `FEEDBACK_ADMIN_KEY`; `src/Admin.tsx` has the Games tab.
+
 ## Roles
 
 `Role` now includes godfather, jester, vigilante. Use `isMafiaRole(role)` (Mafia team) and `actsIn(role, step)` instead of comparing to `"mafia"`. The Detective checks `role === "mafia"`, so the Godfather reads as innocent on purpose. Vigilante has a night step (`vigilantePick`, `"skip"` = hold fire, `vigilanteUsed`). Jester wins via `resolveVote` (`winner: "jester"`). Ghost chat is `Talk.ghost`, filtered in `viewFor`. Adding a role means: `Role`, `roleCounts`, deck in `start`, script role words in `shared/script.ts` (all languages), bot behaviour, `ROLE_INFO` and a card colour in the UI, a compat fixture, and a case in `tests/roles.test.ts`. `tests/simulation.test.ts` plays 45 full games with every role and language.

@@ -1,5 +1,6 @@
 // Local API server (in-memory rooms). Vite proxies /api to it.
 import { createServer } from "node:http";
+import { aggregate } from "./shared/stats";
 import { type FeedbackInput, isAdmin, listFeedback, submitFeedback, toCsv } from "./shared/feedback";
 import { handle, handleRooms } from "./shared/handler";
 import { DEFAULT_TIMING, type Timing } from "./shared/room";
@@ -20,6 +21,11 @@ if (process.env.MGM_SEED_OLD_ROOM) {
 }
 
 createServer(async (req, res) => {
+  if (req.url?.startsWith("/api/stats")) {
+    if (!isAdmin(req.headers.authorization, process.env.FEEDBACK_ADMIN_KEY)) return void res.writeHead(403, { "Content-Type": "application/json" }).end(JSON.stringify({ ok: false, error: "Not allowed." }));
+    const records = await defaultStore().listGames(5000);
+    return void res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ ok: true, stats: aggregate(records), recent: records.slice(-20).reverse() }));
+  }
   if (req.url?.startsWith("/api/feedback")) {
     const json = (code: number, o: unknown) => res.writeHead(code, { "Content-Type": "application/json" }).end(JSON.stringify(o));
     if (req.method === "GET") {

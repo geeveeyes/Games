@@ -77,6 +77,13 @@ describe("RedisStore over the REST protocol", () => {
     expect(items.map((i) => i.text)).toContain("Loved the bots");
   });
 
+  it("keeps anonymous game records through Redis", async () => {
+    const store = new RedisStore(url, "secret");
+    await store.pushGame({ at: 1, rounds: 3, winner: "town", players: 6, bots: 2, roles: [], language: "en", mode: "table", voteStyle: "trial" });
+    const games = await store.listGames(10);
+    expect(games.at(-1)).toMatchObject({ winner: "town", players: 6 });
+  });
+
   it("reports a bad token as an error, not a crash", async () => {
     const store = new RedisStore(url, "wrong");
     await expect(store.get("ABCD")).rejects.toThrow();

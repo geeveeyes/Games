@@ -136,6 +136,33 @@ export interface Line {
   lang?: Lang; // language the line was written in (older saved rooms have none: English)
 }
 
+/** What happened, recorded as the game goes and revealed at the end. */
+export interface HistoryEvent {
+  round: number;
+  kind: "night-kill" | "vigilante-shot" | "saved" | "investigated" | "accused" | "eliminated" | "no-elimination" | "vote";
+  ids?: string[];
+  by?: string;
+  flag?: boolean; // investigated: is Mafia. vigilante-shot: the target died.
+  stage?: VoteStage;
+  votes?: Record<string, string>;
+}
+
+export interface Award {
+  id: string;
+  title: string;
+  detail: string;
+  winners: string[]; // player ids
+}
+
+export interface GameSummary {
+  gameNo: number;
+  rounds: number;
+  winner: Winner;
+  players: { id: string; name: string; role: Role; alive: boolean; bot: boolean }[];
+  timeline: HistoryEvent[];
+  awards: Award[];
+}
+
 export interface Note {
   night: number;
   targetId: string;
@@ -203,6 +230,10 @@ export class Game {
   vigilantePick: string | null = null; // a player id, or "skip" for holding fire
   vigilanteUsed = false;
   lastNightDeathIds: string[] = [];
+  gameNo = 0;
+  history: HistoryEvent[] = [];
+  talkCounts: Record<string, number> = {};
+  summary: GameSummary | null = null;
   lastSaved: string | null = null;
 
   // day
@@ -247,6 +278,10 @@ export class Game {
   private narrate(text: string, cue: Cue | null = null) {
     this.lines.push({ seq: ++this.seq, text, cue, lang: this.settings.language });
     if (this.lines.length > 40) this.lines.shift();
+  }
+  private log(e: HistoryEvent) {
+    this.history.push(e);
+    if (this.history.length > 400) this.history.shift();
   }
   /** One line of narration in the room's language. */
   private t(key: string, vars: Record<string, string | number> = {}): string {
@@ -356,6 +391,7 @@ export class Game {
     const clean = text.replace(/\s+/g, " ").trim().slice(0, 140);
     if (!clean) return fail("Type something to say.");
     this.talk.push({ seq: ++this.talkSeq, id: me.id, name: me.name, text: clean, bot: !!me.bot, ghost });
+    if (!ghost) this.talkCounts[me.id] = (this.talkCounts[me.id] ?? 0) + 1;
     if (this.talk.length > 40) this.talk.shift();
     return ok();
   }
@@ -443,6 +479,10 @@ export class Game {
     this.lastSaved = null;
     this.vigilanteUsed = false;
     this.lastNightDeathIds = [];
+    this.gameNo += 1;
+    this.history = [];
+    this.talkCounts = {};
+    this.summary = null;
     this.lines = [];
     this.phase = "reveal";
     this.narrate(this.t("deal"), "deal");
@@ -533,6 +573,7 @@ export class Game {
       const target = this.player(targetId)!;
       // The Godfather is a different role from "mafia", so the Detective sees him as innocent.
       (this.notes[playerId] ??= []).push({ night: this.round, targetId, isMafia: target.role === "mafia" });
+      this.log({ round: this.round, kind: "investigated", by: playerId, ids: [targetId], flag: target.role === "mafia" });
     }
     return ok();
   }
@@ -591,6 +632,9 @@ export class Game {
     const attacked = [...new Set([target, shot].filter((x): x is string => !!x))];
     const dead = attacked.filter((id) => id !== this.doctorPick).map((id) => this.player(id)!);
     this.lastSaved = this.doctorPick;
+    for (const id of attacked) if (id === this.doctorPick) this.log({ round: this.round, kind: "saved", ids: [id], by: this.players.find((p) => p.role === "doctor")?.id });
+    if (target && target !== this.doctorPick) this.log({ round: this.round, kind: "night-kill", ids: [target] });
+    if (shot) this.log({ round: this.round, kind: "vigilante-shot", ids: [shot], by: this.players.find((p) => p.role === "vigilante")?.id, flag: shot !== this.doctorPick });
     for (const v of dead) v.alive = false;
     this.lastNightDeathIds = dead.map((d) => d.id);
     this.lastNightDeathId = dead[0]?.id ?? null;
@@ -665,6 +709,7 @@ export class Game {
   /** Close the current vote. In trial style the first vote picks defendants; the final vote eliminates. */
   resolveVote() {
     if (this.phase !== "vote") return;
+    this.log({ round: this.round, kind: "vote", stage: this.voteStage, votes: { ...this.votes } });
     if (this.voteStage === "poll") return this.resolvePoll();
     const counts = this.tally();
     const entries = Object.entries(counts);
@@ -681,6 +726,7 @@ export class Game {
       text = this.t("elim", { name: eliminated.name, votes: this.t(top === 1 ? "votes.one" : "votes.many", { n: top }) }) + role;
     }
     this.lastResult = { text, eliminatedId: eliminated?.id ?? null };
+    this.log(eliminated ? { round: this.round, kind: "eliminated", ids: [eliminated.id] } : { round: this.round, kind: "no-elimination" });
     this.phase = "result";
     this.narrate(text, eliminated ? "elim" : "noelim");
     if (eliminated?.role === "jester") {
@@ -696,6 +742,7 @@ export class Game {
     const ranked = Object.entries(counts).filter(([id]) => id !== "skip").sort((a, b) => b[1] - a[1]);
     if (!ranked.length || ranked[0][1] <= skips) {
       this.lastResult = { text: this.t("noaccuse"), eliminatedId: null };
+      this.log({ round: this.round, kind: "no-elimination" });
       this.phase = "result";
       this.narrate(this.lastResult.text, "noelim");
       return;
@@ -711,6 +758,7 @@ export class Game {
     }
     this.defendants = chosen;
     this.defenseIdx = 0;
+    this.log({ round: this.round, kind: "accused", ids: [...chosen] });
     this.phase = "defense";
     const names = chosen.map((id) => this.player(id)!.name);
     const intro = names.length === 2 ? this.t("defense.two", { a: names[0], b: names[1] }) : this.t("defense.one", { a: names[0] });
@@ -747,6 +795,67 @@ export class Game {
     this.winner = w;
     this.phase = "over";
     this.narrate(text, cue);
+    this.summary = this.buildSummary(w);
+  }
+
+  /** Who did what, plus a few fun awards. Built once, when the game ends. */
+  private buildSummary(winner: Winner): GameSummary {
+    const name = (id: string) => this.player(id)?.name ?? "someone";
+    const awards: Award[] = [];
+    const add = (a: Award) => a.winners.length && awards.push(a);
+
+    // votes received across every vote
+    const received: Record<string, number> = {};
+    for (const e of this.history) if (e.kind === "vote") for (const t of Object.values(e.votes ?? {})) if (t !== "skip") received[t] = (received[t] ?? 0) + 1;
+
+    if (winner === "jester") {
+      add({ id: "perfect-fool", title: "Perfect fool", detail: "Fooled the whole village into voting them out.", winners: this.players.filter((p) => p.role === "jester").map((p) => p.id) });
+    }
+    const found = this.history.filter((e) => e.kind === "investigated" && e.flag);
+    if (found.length) {
+      const first = found[0];
+      add({ id: "sharp-eye", title: "Sharp eye", detail: `Found a Mafia member on night ${first.round}.`, winners: [...new Set(found.map((e) => e.by!).filter(Boolean))] });
+    }
+    const saves = this.history.filter((e) => e.kind === "saved");
+    if (saves.length) {
+      add({ id: "guardian-angel", title: "Guardian angel", detail: `Saved ${saves.length === 1 ? "someone" : `${saves.length} lives`} from a certain death.`, winners: [...new Set(saves.map((e) => e.by!).filter(Boolean))] });
+    }
+    const shots = this.history.filter((e) => e.kind === "vigilante-shot");
+    for (const sh of shots) {
+      const target = this.player(sh.ids![0]);
+      if (!sh.by || !target) continue;
+      add(isMafiaRole(target.role)
+        ? { id: "dead-eye", title: "Dead eye", detail: `Shot a Mafia member (${target.name}) on night ${sh.round}.`, winners: [sh.by] }
+        : { id: "friendly-fire", title: "Friendly fire", detail: `Shot an innocent (${target.name}) on night ${sh.round}.`, winners: [sh.by] });
+    }
+    const totalVotes = Object.values(received).reduce((a, b) => a + b, 0);
+    const team = this.players.filter((p) => isMafiaRole(p.role));
+    if (team.length && totalVotes >= 4) {
+      const least = Math.min(...team.map((p) => received[p.id] ?? 0));
+      const liars = team.filter((p) => (received[p.id] ?? 0) === least);
+      add({ id: "best-liar", title: "Best liar", detail: least === 0 ? "Never received a single vote." : `Only ${least} vote${least === 1 ? "" : "s"} against them all game.`, winners: liars.map((p) => p.id) });
+    }
+    const most = Math.max(0, ...Object.values(received));
+    if (most >= 3) {
+      add({ id: "most-suspected", title: "Most suspected", detail: `${most} votes against them across the game.`, winners: Object.entries(received).filter(([, n]) => n === most).map(([id]) => id) });
+    }
+    const humanTalk = Object.entries(this.talkCounts).filter(([id]) => !this.player(id)?.bot);
+    const topTalk = Math.max(0, ...humanTalk.map(([, n]) => n));
+    if (topTalk >= 3) {
+      add({ id: "chatterbox", title: "Chatterbox", detail: `${topTalk} messages at the table.`, winners: humanTalk.filter(([, n]) => n === topTalk).map(([id]) => id) });
+    }
+    const standing = this.alive();
+    if (standing.length === 1) add({ id: "last-standing", title: "Last one standing", detail: "The only player left alive.", winners: [standing[0].id] });
+    void name;
+
+    return {
+      gameNo: this.gameNo,
+      rounds: this.round,
+      winner,
+      players: this.players.map((p) => ({ id: p.id, name: p.name, role: p.role!, alive: p.alive, bot: !!p.bot })),
+      timeline: this.history.filter((e) => e.kind !== "vote"),
+      awards: awards.slice(0, 6),
+    };
   }
 
   rematch(): Result {
@@ -764,6 +873,7 @@ export class Game {
     this.vigilanteUsed = false;
     this.vigilantePick = null;
     this.lastNightDeathIds = [];
+    this.summary = null;
     for (const p of this.players) {
       p.role = null;
       p.alive = true;
@@ -834,6 +944,8 @@ export class Game {
         eligible: this.alive().length,
       },
       result: this.lastResult,
+      summary: this.phase === "over" ? this.summary : null,
+      gameNo: this.gameNo,
       defendants: this.defendants,
       defenseIdx: this.defenseIdx,
       skipToken: this.skipToken(),
