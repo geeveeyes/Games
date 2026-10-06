@@ -31,7 +31,7 @@ describe("narration script", () => {
     expect(spokenTime("en", 60)).toBe("1 minute");
     expect(spokenTime("en", 180)).toBe("3 minutes");
     expect(spokenTime("hi", 180)).toBe("3 मिनट");
-    expect(spokenTime("ta", 180)).toBe("3 நிமிடங்கள்");
+    expect(spokenTime("ta", 180)).toBe("3 நிமிஷம்");
   });
 
   it("splits text into segments with the right pauses", () => {
