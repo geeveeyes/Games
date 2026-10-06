@@ -18,6 +18,9 @@ export const ROLE_WORDS: Record<string, Record<Lang, string>> = {
   doctor: { en: "Doctor", hi: "डॉक्टर", ta: "டாக்டர்" },
   detective: { en: "Detective", hi: "जासूस", ta: "துப்பறிவாளர்" },
   villager: { en: "Villager", hi: "गाँव वाला", ta: "கிராமவாசி" },
+  godfather: { en: "Godfather", hi: "गॉडफ़ादर", ta: "காட்ஃபாதர்" },
+  jester: { en: "Jester", hi: "विदूषक", ta: "கோமாளி" },
+  vigilante: { en: "Vigilante", hi: "निशानेबाज़", ta: "துப்பாக்கி வீரர்" },
 };
 /** "They were ___" phrases. */
 export const WERE_WORDS: Record<string, Record<Lang, string>> = {
@@ -25,6 +28,9 @@ export const WERE_WORDS: Record<string, Record<Lang, string>> = {
   doctor: { en: "the Doctor", hi: "डॉक्टर", ta: "டாக்டர்" },
   detective: { en: "the Detective", hi: "जासूस", ta: "துப்பறிவாளர்" },
   villager: { en: "a Villager", hi: "गाँव वाले", ta: "கிராமவாசி" },
+  godfather: { en: "the Godfather", hi: "गॉडफ़ादर", ta: "காட்ஃபாதர்" },
+  jester: { en: "the Jester", hi: "विदूषक", ta: "கோமாளி" },
+  vigilante: { en: "the Vigilante", hi: "निशानेबाज़", ta: "துப்பாக்கி வீரர்" },
 };
 
 const S: Record<string, Variants> = {
@@ -71,6 +77,12 @@ const S: Record<string, Variants> = {
     ["जासूस... आँखें खोलिए। | आप किसका राज़ जानना चाहते हैं?", "जासूस... जागिए। | जाँच के लिए किसी को चुनिए।"],
     ["துப்பறிவாளர்... கண்களைத் திறங்கள். | யாருடைய ரகசியத்தை அறிய விரும்புகிறீர்கள்?", "துப்பறிவாளர்... எழுந்திருங்கள். | விசாரிக்க ஒருவரைத் தேர்ந்தெடுங்கள்."],
   ),
+  "open.vigilante": v(
+    ["Vigilante... open your eyes. | You carry a single bullet. || Will you use it tonight... or hold your fire?", "Vigilante... wake up. | Choose someone to shoot, or hold your fire."],
+    ["निशानेबाज़... आँखें खोलिए। | आपके पास सिर्फ़ एक गोली है। || क्या आप आज रात उसका इस्तेमाल करेंगे... या रुकेंगे?", "निशानेबाज़... जागिए। | किसी को निशाना बनाइए, या गोली बचाकर रखिए।"],
+    ["துப்பாக்கி வீரர்... கண்களைத் திறங்கள். | உங்களிடம் ஒரே ஒரு குண்டு உள்ளது. || இன்றிரவு அதைப் பயன்படுத்துவீர்களா... அல்லது காத்திருப்பீர்களா?", "துப்பாக்கி வீரர்... எழுந்திருங்கள். | யாரையாவது சுடுங்கள், அல்லது சுடாமல் இருங்கள்."],
+  ),
+  "remote.vigilante": v(["Vigilante, it is your turn. | Shoot someone, or hold your fire."], ["निशानेबाज़, आपकी बारी है। | किसी को निशाना बनाइए, या रुके रहिए।"], ["துப்பாக்கி வீரர், உங்கள் முறை. | யாரையாவது சுடுங்கள், அல்லது சுடாமல் இருங்கள்."]),
   "remote.mafia": v(["Mafia, it is your turn. | Agree on a victim."], ["माफ़िया, आपकी बारी है। | किसी एक शिकार पर सहमत हों।"], ["மாஃபியா, உங்கள் முறை. | ஒரு பலியாளை முடிவு செய்யுங்கள்."]),
   "remote.doctor": v(["Doctor, it is your turn. | Choose someone to save."], ["डॉक्टर, आपकी बारी है। | किसी को बचाने के लिए चुनिए।"], ["டாக்டர், உங்கள் முறை. | காப்பாற்ற ஒருவரைத் தேர்ந்தெடுங்கள்."]),
   "remote.detective": v(["Detective, it is your turn. | Choose someone to investigate."], ["जासूस, आपकी बारी है। | जाँच के लिए किसी को चुनिए।"], ["துப்பறிவாளர், உங்கள் முறை. | விசாரிக்க ஒருவரைத் தேர்ந்தெடுங்கள்."]),
@@ -78,6 +90,8 @@ const S: Record<string, Variants> = {
   "dawn.open.remote": v(["The sun rises. || "], ["सूरज निकल आया। || "], ["சூரியன் உதித்தது. || "]),
   "dawn.death": v(["Sadly... | {name} | was killed in the night."], ["दुख की बात है... | {name} | रात में मारे गए।"], ["வருத்தமான செய்தி... | {name} | இரவில் கொல்லப்பட்டார்."]),
   "dawn.role": v([" | They were {were}."], [" | वे {were} थे।"], [" | அவர் ஒரு {were}."]),
+  "dawn.two": v(["Sadly... | {a} | and {b} | were killed in the night."], ["दुख की बात है... | {a} | और {b} | रात में मारे गए।"], ["வருத்தமான செய்தி... | {a} | மற்றும் {b} | இரவில் கொல்லப்பட்டனர்."]),
+  "dawn.role.named": v([" | {name} was {were}."], [" | {name} {were} थे।"], [" | {name} ஒரு {were}."]),
   "dawn.none": v(
     ["And miraculously... | nobody died tonight.", "The village wakes... | and everyone is still alive."],
     ["और चमत्कार... | आज रात कोई नहीं मरा।", "गाँव जागा... | और सब ज़िंदा हैं।"],
@@ -119,6 +133,7 @@ const S: Record<string, Variants> = {
   "defense.next": v(["Now... | {name}. | Your turn. | You have {time} to defend yourself."], ["अब... | {name}। | आपकी बारी। | अपनी सफ़ाई देने के लिए आपके पास {time} हैं।"], ["இப்போது... | {name}. | உங்கள் முறை. | உங்களை நிரூபிக்க {time} உள்ளது."]),
   final: v(["The defenses are done. || Now... | cast your final vote. | Who will be eliminated?"], ["सफ़ाई पूरी हुई। || अब... | अपना अंतिम वोट दीजिए। | किसे बाहर किया जाए?"], ["விளக்கங்கள் முடிந்தன. || இப்போது... | இறுதி வாக்கைப் போடுங்கள். | யார் வெளியேற்றப்பட வேண்டும்?"]),
   "win.town": v(["The last Mafia is gone. || The Town wins!"], ["आख़िरी माफ़िया भी पकड़ा गया। || गाँव वालों की जीत हुई!"], ["கடைசி மாஃபியாவும் பிடிபட்டார். || கிராமவாசிகள் வெற்றி பெற்றனர்!"]),
+  "win.jester": v(["The Jester has fooled the whole village. || The Jester wins!"], ["विदूषक ने पूरे गाँव को बेवकूफ़ बना दिया। || विदूषक जीत गया!"], ["கோமாளி முழு கிராமத்தையும் ஏமாற்றிவிட்டார். || கோமாளி வெற்றி பெற்றார்!"]),
   "win.mafia": v(["Darkness settles over the village for good. || The Mafia wins."], ["गाँव पर हमेशा के लिए अँधेरा छा गया। || माफ़िया जीत गया।"], ["கிராமத்தின் மேல் என்றென்றும் இருள் கவிந்தது. || மாஃபியா வெற்றி பெற்றது."]),
 };
 

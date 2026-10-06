@@ -36,12 +36,16 @@ export function recordableSegments(lang: Lang): string[] {
         if (!vars.length) {
           add(seg.say);
         } else if (vars.every((x) => ["role", "were", "time"].includes(x))) {
-          const roles = Object.keys(ROLE_WORDS);
-          for (const r of roles) {
-            for (const t of TIME_VALUES) {
-              add(fill(seg.say, { role: ROLE_WORDS[r][lang], were: WERE_WORDS[r][lang], time: spokenTime(lang, t) }));
-            }
-          }
+          // Finite choices only: the roles that wake at night, every "they were" role, and the timer values.
+          const nightRoles = ["mafia", "doctor", "detective", "vigilante"];
+          const domain: Record<string, Record<string, string>[]> = {
+            role: nightRoles.map((r) => ({ role: ROLE_WORDS[r][lang] })),
+            were: Object.keys(WERE_WORDS).map((r) => ({ were: WERE_WORDS[r][lang] })),
+            time: TIME_VALUES.map((t) => ({ time: spokenTime(lang, t) })),
+          };
+          let combos: Record<string, string>[] = [{}];
+          for (const x of vars) combos = combos.flatMap((c0) => domain[x].map((d) => ({ ...c0, ...d })));
+          for (const combo of combos) add(fill(seg.say, combo));
         }
       }
     }

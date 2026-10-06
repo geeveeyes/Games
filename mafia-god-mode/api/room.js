@@ -37,13 +37,19 @@ var ROLE_WORDS = {
   mafia: { en: "Mafia", hi: "\u092E\u093E\u092B\u093C\u093F\u092F\u093E", ta: "\u0BAE\u0BBE\u0B83\u0BAA\u0BBF\u0BAF\u0BBE" },
   doctor: { en: "Doctor", hi: "\u0921\u0949\u0915\u094D\u091F\u0930", ta: "\u0B9F\u0BBE\u0B95\u0BCD\u0B9F\u0BB0\u0BCD" },
   detective: { en: "Detective", hi: "\u091C\u093E\u0938\u0942\u0938", ta: "\u0BA4\u0BC1\u0BAA\u0BCD\u0BAA\u0BB1\u0BBF\u0BB5\u0BBE\u0BB3\u0BB0\u0BCD" },
-  villager: { en: "Villager", hi: "\u0917\u093E\u0901\u0935 \u0935\u093E\u0932\u093E", ta: "\u0B95\u0BBF\u0BB0\u0BBE\u0BAE\u0BB5\u0BBE\u0B9A\u0BBF" }
+  villager: { en: "Villager", hi: "\u0917\u093E\u0901\u0935 \u0935\u093E\u0932\u093E", ta: "\u0B95\u0BBF\u0BB0\u0BBE\u0BAE\u0BB5\u0BBE\u0B9A\u0BBF" },
+  godfather: { en: "Godfather", hi: "\u0917\u0949\u0921\u092B\u093C\u093E\u0926\u0930", ta: "\u0B95\u0BBE\u0B9F\u0BCD\u0B83\u0BAA\u0BBE\u0BA4\u0BB0\u0BCD" },
+  jester: { en: "Jester", hi: "\u0935\u093F\u0926\u0942\u0937\u0915", ta: "\u0B95\u0BCB\u0BAE\u0BBE\u0BB3\u0BBF" },
+  vigilante: { en: "Vigilante", hi: "\u0928\u093F\u0936\u093E\u0928\u0947\u092C\u093E\u091C\u093C", ta: "\u0BA4\u0BC1\u0BAA\u0BCD\u0BAA\u0BBE\u0B95\u0BCD\u0B95\u0BBF \u0BB5\u0BC0\u0BB0\u0BB0\u0BCD" }
 };
 var WERE_WORDS = {
   mafia: { en: "a Mafia member", hi: "\u092E\u093E\u092B\u093C\u093F\u092F\u093E \u0915\u0947 \u0938\u0926\u0938\u094D\u092F", ta: "\u0BAE\u0BBE\u0B83\u0BAA\u0BBF\u0BAF\u0BBE \u0B89\u0BB1\u0BC1\u0BAA\u0BCD\u0BAA\u0BBF\u0BA9\u0BB0\u0BCD" },
   doctor: { en: "the Doctor", hi: "\u0921\u0949\u0915\u094D\u091F\u0930", ta: "\u0B9F\u0BBE\u0B95\u0BCD\u0B9F\u0BB0\u0BCD" },
   detective: { en: "the Detective", hi: "\u091C\u093E\u0938\u0942\u0938", ta: "\u0BA4\u0BC1\u0BAA\u0BCD\u0BAA\u0BB1\u0BBF\u0BB5\u0BBE\u0BB3\u0BB0\u0BCD" },
-  villager: { en: "a Villager", hi: "\u0917\u093E\u0901\u0935 \u0935\u093E\u0932\u0947", ta: "\u0B95\u0BBF\u0BB0\u0BBE\u0BAE\u0BB5\u0BBE\u0B9A\u0BBF" }
+  villager: { en: "a Villager", hi: "\u0917\u093E\u0901\u0935 \u0935\u093E\u0932\u0947", ta: "\u0B95\u0BBF\u0BB0\u0BBE\u0BAE\u0BB5\u0BBE\u0B9A\u0BBF" },
+  godfather: { en: "the Godfather", hi: "\u0917\u0949\u0921\u092B\u093C\u093E\u0926\u0930", ta: "\u0B95\u0BBE\u0B9F\u0BCD\u0B83\u0BAA\u0BBE\u0BA4\u0BB0\u0BCD" },
+  jester: { en: "the Jester", hi: "\u0935\u093F\u0926\u0942\u0937\u0915", ta: "\u0B95\u0BCB\u0BAE\u0BBE\u0BB3\u0BBF" },
+  vigilante: { en: "the Vigilante", hi: "\u0928\u093F\u0936\u093E\u0928\u0947\u092C\u093E\u091C\u093C", ta: "\u0BA4\u0BC1\u0BAA\u0BCD\u0BAA\u0BBE\u0B95\u0BCD\u0B95\u0BBF \u0BB5\u0BC0\u0BB0\u0BB0\u0BCD" }
 };
 var S = {
   deal: v(
@@ -89,6 +95,12 @@ var S = {
     ["\u091C\u093E\u0938\u0942\u0938... \u0906\u0901\u0916\u0947\u0902 \u0916\u094B\u0932\u093F\u090F\u0964 | \u0906\u092A \u0915\u093F\u0938\u0915\u093E \u0930\u093E\u091C\u093C \u091C\u093E\u0928\u0928\u093E \u091A\u093E\u0939\u0924\u0947 \u0939\u0948\u0902?", "\u091C\u093E\u0938\u0942\u0938... \u091C\u093E\u0917\u093F\u090F\u0964 | \u091C\u093E\u0901\u091A \u0915\u0947 \u0932\u093F\u090F \u0915\u093F\u0938\u0940 \u0915\u094B \u091A\u0941\u0928\u093F\u090F\u0964"],
     ["\u0BA4\u0BC1\u0BAA\u0BCD\u0BAA\u0BB1\u0BBF\u0BB5\u0BBE\u0BB3\u0BB0\u0BCD... \u0B95\u0BA3\u0BCD\u0B95\u0BB3\u0BC8\u0BA4\u0BCD \u0BA4\u0BBF\u0BB1\u0B99\u0BCD\u0B95\u0BB3\u0BCD. | \u0BAF\u0BBE\u0BB0\u0BC1\u0B9F\u0BC8\u0BAF \u0BB0\u0B95\u0B9A\u0BBF\u0BAF\u0BA4\u0BCD\u0BA4\u0BC8 \u0B85\u0BB1\u0BBF\u0BAF \u0BB5\u0BBF\u0BB0\u0BC1\u0BAE\u0BCD\u0BAA\u0BC1\u0B95\u0BBF\u0BB1\u0BC0\u0BB0\u0BCD\u0B95\u0BB3\u0BCD?", "\u0BA4\u0BC1\u0BAA\u0BCD\u0BAA\u0BB1\u0BBF\u0BB5\u0BBE\u0BB3\u0BB0\u0BCD... \u0B8E\u0BB4\u0BC1\u0BA8\u0BCD\u0BA4\u0BBF\u0BB0\u0BC1\u0B99\u0BCD\u0B95\u0BB3\u0BCD. | \u0BB5\u0BBF\u0B9A\u0BBE\u0BB0\u0BBF\u0B95\u0BCD\u0B95 \u0B92\u0BB0\u0BC1\u0BB5\u0BB0\u0BC8\u0BA4\u0BCD \u0BA4\u0BC7\u0BB0\u0BCD\u0BA8\u0BCD\u0BA4\u0BC6\u0B9F\u0BC1\u0B99\u0BCD\u0B95\u0BB3\u0BCD."]
   ),
+  "open.vigilante": v(
+    ["Vigilante... open your eyes. | You carry a single bullet. || Will you use it tonight... or hold your fire?", "Vigilante... wake up. | Choose someone to shoot, or hold your fire."],
+    ["\u0928\u093F\u0936\u093E\u0928\u0947\u092C\u093E\u091C\u093C... \u0906\u0901\u0916\u0947\u0902 \u0916\u094B\u0932\u093F\u090F\u0964 | \u0906\u092A\u0915\u0947 \u092A\u093E\u0938 \u0938\u093F\u0930\u094D\u092B\u093C \u090F\u0915 \u0917\u094B\u0932\u0940 \u0939\u0948\u0964 || \u0915\u094D\u092F\u093E \u0906\u092A \u0906\u091C \u0930\u093E\u0924 \u0909\u0938\u0915\u093E \u0907\u0938\u094D\u0924\u0947\u092E\u093E\u0932 \u0915\u0930\u0947\u0902\u0917\u0947... \u092F\u093E \u0930\u0941\u0915\u0947\u0902\u0917\u0947?", "\u0928\u093F\u0936\u093E\u0928\u0947\u092C\u093E\u091C\u093C... \u091C\u093E\u0917\u093F\u090F\u0964 | \u0915\u093F\u0938\u0940 \u0915\u094B \u0928\u093F\u0936\u093E\u0928\u093E \u092C\u0928\u093E\u0907\u090F, \u092F\u093E \u0917\u094B\u0932\u0940 \u092C\u091A\u093E\u0915\u0930 \u0930\u0916\u093F\u090F\u0964"],
+    ["\u0BA4\u0BC1\u0BAA\u0BCD\u0BAA\u0BBE\u0B95\u0BCD\u0B95\u0BBF \u0BB5\u0BC0\u0BB0\u0BB0\u0BCD... \u0B95\u0BA3\u0BCD\u0B95\u0BB3\u0BC8\u0BA4\u0BCD \u0BA4\u0BBF\u0BB1\u0B99\u0BCD\u0B95\u0BB3\u0BCD. | \u0B89\u0B99\u0BCD\u0B95\u0BB3\u0BBF\u0B9F\u0BAE\u0BCD \u0B92\u0BB0\u0BC7 \u0B92\u0BB0\u0BC1 \u0B95\u0BC1\u0BA3\u0BCD\u0B9F\u0BC1 \u0B89\u0BB3\u0BCD\u0BB3\u0BA4\u0BC1. || \u0B87\u0BA9\u0BCD\u0BB1\u0BBF\u0BB0\u0BB5\u0BC1 \u0B85\u0BA4\u0BC8\u0BAA\u0BCD \u0BAA\u0BAF\u0BA9\u0BCD\u0BAA\u0B9F\u0BC1\u0BA4\u0BCD\u0BA4\u0BC1\u0BB5\u0BC0\u0BB0\u0BCD\u0B95\u0BB3\u0BBE... \u0B85\u0BB2\u0BCD\u0BB2\u0BA4\u0BC1 \u0B95\u0BBE\u0BA4\u0BCD\u0BA4\u0BBF\u0BB0\u0BC1\u0BAA\u0BCD\u0BAA\u0BC0\u0BB0\u0BCD\u0B95\u0BB3\u0BBE?", "\u0BA4\u0BC1\u0BAA\u0BCD\u0BAA\u0BBE\u0B95\u0BCD\u0B95\u0BBF \u0BB5\u0BC0\u0BB0\u0BB0\u0BCD... \u0B8E\u0BB4\u0BC1\u0BA8\u0BCD\u0BA4\u0BBF\u0BB0\u0BC1\u0B99\u0BCD\u0B95\u0BB3\u0BCD. | \u0BAF\u0BBE\u0BB0\u0BC8\u0BAF\u0BBE\u0BB5\u0BA4\u0BC1 \u0B9A\u0BC1\u0B9F\u0BC1\u0B99\u0BCD\u0B95\u0BB3\u0BCD, \u0B85\u0BB2\u0BCD\u0BB2\u0BA4\u0BC1 \u0B9A\u0BC1\u0B9F\u0BBE\u0BAE\u0BB2\u0BCD \u0B87\u0BB0\u0BC1\u0B99\u0BCD\u0B95\u0BB3\u0BCD."]
+  ),
+  "remote.vigilante": v(["Vigilante, it is your turn. | Shoot someone, or hold your fire."], ["\u0928\u093F\u0936\u093E\u0928\u0947\u092C\u093E\u091C\u093C, \u0906\u092A\u0915\u0940 \u092C\u093E\u0930\u0940 \u0939\u0948\u0964 | \u0915\u093F\u0938\u0940 \u0915\u094B \u0928\u093F\u0936\u093E\u0928\u093E \u092C\u0928\u093E\u0907\u090F, \u092F\u093E \u0930\u0941\u0915\u0947 \u0930\u0939\u093F\u090F\u0964"], ["\u0BA4\u0BC1\u0BAA\u0BCD\u0BAA\u0BBE\u0B95\u0BCD\u0B95\u0BBF \u0BB5\u0BC0\u0BB0\u0BB0\u0BCD, \u0B89\u0B99\u0BCD\u0B95\u0BB3\u0BCD \u0BAE\u0BC1\u0BB1\u0BC8. | \u0BAF\u0BBE\u0BB0\u0BC8\u0BAF\u0BBE\u0BB5\u0BA4\u0BC1 \u0B9A\u0BC1\u0B9F\u0BC1\u0B99\u0BCD\u0B95\u0BB3\u0BCD, \u0B85\u0BB2\u0BCD\u0BB2\u0BA4\u0BC1 \u0B9A\u0BC1\u0B9F\u0BBE\u0BAE\u0BB2\u0BCD \u0B87\u0BB0\u0BC1\u0B99\u0BCD\u0B95\u0BB3\u0BCD."]),
   "remote.mafia": v(["Mafia, it is your turn. | Agree on a victim."], ["\u092E\u093E\u092B\u093C\u093F\u092F\u093E, \u0906\u092A\u0915\u0940 \u092C\u093E\u0930\u0940 \u0939\u0948\u0964 | \u0915\u093F\u0938\u0940 \u090F\u0915 \u0936\u093F\u0915\u093E\u0930 \u092A\u0930 \u0938\u0939\u092E\u0924 \u0939\u094B\u0902\u0964"], ["\u0BAE\u0BBE\u0B83\u0BAA\u0BBF\u0BAF\u0BBE, \u0B89\u0B99\u0BCD\u0B95\u0BB3\u0BCD \u0BAE\u0BC1\u0BB1\u0BC8. | \u0B92\u0BB0\u0BC1 \u0BAA\u0BB2\u0BBF\u0BAF\u0BBE\u0BB3\u0BC8 \u0BAE\u0BC1\u0B9F\u0BBF\u0BB5\u0BC1 \u0B9A\u0BC6\u0BAF\u0BCD\u0BAF\u0BC1\u0B99\u0BCD\u0B95\u0BB3\u0BCD."]),
   "remote.doctor": v(["Doctor, it is your turn. | Choose someone to save."], ["\u0921\u0949\u0915\u094D\u091F\u0930, \u0906\u092A\u0915\u0940 \u092C\u093E\u0930\u0940 \u0939\u0948\u0964 | \u0915\u093F\u0938\u0940 \u0915\u094B \u092C\u091A\u093E\u0928\u0947 \u0915\u0947 \u0932\u093F\u090F \u091A\u0941\u0928\u093F\u090F\u0964"], ["\u0B9F\u0BBE\u0B95\u0BCD\u0B9F\u0BB0\u0BCD, \u0B89\u0B99\u0BCD\u0B95\u0BB3\u0BCD \u0BAE\u0BC1\u0BB1\u0BC8. | \u0B95\u0BBE\u0BAA\u0BCD\u0BAA\u0BBE\u0BB1\u0BCD\u0BB1 \u0B92\u0BB0\u0BC1\u0BB5\u0BB0\u0BC8\u0BA4\u0BCD \u0BA4\u0BC7\u0BB0\u0BCD\u0BA8\u0BCD\u0BA4\u0BC6\u0B9F\u0BC1\u0B99\u0BCD\u0B95\u0BB3\u0BCD."]),
   "remote.detective": v(["Detective, it is your turn. | Choose someone to investigate."], ["\u091C\u093E\u0938\u0942\u0938, \u0906\u092A\u0915\u0940 \u092C\u093E\u0930\u0940 \u0939\u0948\u0964 | \u091C\u093E\u0901\u091A \u0915\u0947 \u0932\u093F\u090F \u0915\u093F\u0938\u0940 \u0915\u094B \u091A\u0941\u0928\u093F\u090F\u0964"], ["\u0BA4\u0BC1\u0BAA\u0BCD\u0BAA\u0BB1\u0BBF\u0BB5\u0BBE\u0BB3\u0BB0\u0BCD, \u0B89\u0B99\u0BCD\u0B95\u0BB3\u0BCD \u0BAE\u0BC1\u0BB1\u0BC8. | \u0BB5\u0BBF\u0B9A\u0BBE\u0BB0\u0BBF\u0B95\u0BCD\u0B95 \u0B92\u0BB0\u0BC1\u0BB5\u0BB0\u0BC8\u0BA4\u0BCD \u0BA4\u0BC7\u0BB0\u0BCD\u0BA8\u0BCD\u0BA4\u0BC6\u0B9F\u0BC1\u0B99\u0BCD\u0B95\u0BB3\u0BCD."]),
@@ -96,6 +108,8 @@ var S = {
   "dawn.open.remote": v(["The sun rises. || "], ["\u0938\u0942\u0930\u091C \u0928\u093F\u0915\u0932 \u0906\u092F\u093E\u0964 || "], ["\u0B9A\u0BC2\u0BB0\u0BBF\u0BAF\u0BA9\u0BCD \u0B89\u0BA4\u0BBF\u0BA4\u0BCD\u0BA4\u0BA4\u0BC1. || "]),
   "dawn.death": v(["Sadly... | {name} | was killed in the night."], ["\u0926\u0941\u0916 \u0915\u0940 \u092C\u093E\u0924 \u0939\u0948... | {name} | \u0930\u093E\u0924 \u092E\u0947\u0902 \u092E\u093E\u0930\u0947 \u0917\u090F\u0964"], ["\u0BB5\u0BB0\u0BC1\u0BA4\u0BCD\u0BA4\u0BAE\u0BBE\u0BA9 \u0B9A\u0BC6\u0BAF\u0BCD\u0BA4\u0BBF... | {name} | \u0B87\u0BB0\u0BB5\u0BBF\u0BB2\u0BCD \u0B95\u0BCA\u0BB2\u0BCD\u0BB2\u0BAA\u0BCD\u0BAA\u0B9F\u0BCD\u0B9F\u0BBE\u0BB0\u0BCD."]),
   "dawn.role": v([" | They were {were}."], [" | \u0935\u0947 {were} \u0925\u0947\u0964"], [" | \u0B85\u0BB5\u0BB0\u0BCD \u0B92\u0BB0\u0BC1 {were}."]),
+  "dawn.two": v(["Sadly... | {a} | and {b} | were killed in the night."], ["\u0926\u0941\u0916 \u0915\u0940 \u092C\u093E\u0924 \u0939\u0948... | {a} | \u0914\u0930 {b} | \u0930\u093E\u0924 \u092E\u0947\u0902 \u092E\u093E\u0930\u0947 \u0917\u090F\u0964"], ["\u0BB5\u0BB0\u0BC1\u0BA4\u0BCD\u0BA4\u0BAE\u0BBE\u0BA9 \u0B9A\u0BC6\u0BAF\u0BCD\u0BA4\u0BBF... | {a} | \u0BAE\u0BB1\u0BCD\u0BB1\u0BC1\u0BAE\u0BCD {b} | \u0B87\u0BB0\u0BB5\u0BBF\u0BB2\u0BCD \u0B95\u0BCA\u0BB2\u0BCD\u0BB2\u0BAA\u0BCD\u0BAA\u0B9F\u0BCD\u0B9F\u0BA9\u0BB0\u0BCD."]),
+  "dawn.role.named": v([" | {name} was {were}."], [" | {name} {were} \u0925\u0947\u0964"], [" | {name} \u0B92\u0BB0\u0BC1 {were}."]),
   "dawn.none": v(
     ["And miraculously... | nobody died tonight.", "The village wakes... | and everyone is still alive."],
     ["\u0914\u0930 \u091A\u092E\u0924\u094D\u0915\u093E\u0930... | \u0906\u091C \u0930\u093E\u0924 \u0915\u094B\u0908 \u0928\u0939\u0940\u0902 \u092E\u0930\u093E\u0964", "\u0917\u093E\u0901\u0935 \u091C\u093E\u0917\u093E... | \u0914\u0930 \u0938\u092C \u091C\u093C\u093F\u0902\u0926\u093E \u0939\u0948\u0902\u0964"],
@@ -137,6 +151,7 @@ var S = {
   "defense.next": v(["Now... | {name}. | Your turn. | You have {time} to defend yourself."], ["\u0905\u092C... | {name}\u0964 | \u0906\u092A\u0915\u0940 \u092C\u093E\u0930\u0940\u0964 | \u0905\u092A\u0928\u0940 \u0938\u092B\u093C\u093E\u0908 \u0926\u0947\u0928\u0947 \u0915\u0947 \u0932\u093F\u090F \u0906\u092A\u0915\u0947 \u092A\u093E\u0938 {time} \u0939\u0948\u0902\u0964"], ["\u0B87\u0BAA\u0BCD\u0BAA\u0BCB\u0BA4\u0BC1... | {name}. | \u0B89\u0B99\u0BCD\u0B95\u0BB3\u0BCD \u0BAE\u0BC1\u0BB1\u0BC8. | \u0B89\u0B99\u0BCD\u0B95\u0BB3\u0BC8 \u0BA8\u0BBF\u0BB0\u0BC2\u0BAA\u0BBF\u0B95\u0BCD\u0B95 {time} \u0B89\u0BB3\u0BCD\u0BB3\u0BA4\u0BC1."]),
   final: v(["The defenses are done. || Now... | cast your final vote. | Who will be eliminated?"], ["\u0938\u092B\u093C\u093E\u0908 \u092A\u0942\u0930\u0940 \u0939\u0941\u0908\u0964 || \u0905\u092C... | \u0905\u092A\u0928\u093E \u0905\u0902\u0924\u093F\u092E \u0935\u094B\u091F \u0926\u0940\u091C\u093F\u090F\u0964 | \u0915\u093F\u0938\u0947 \u092C\u093E\u0939\u0930 \u0915\u093F\u092F\u093E \u091C\u093E\u090F?"], ["\u0BB5\u0BBF\u0BB3\u0B95\u0BCD\u0B95\u0B99\u0BCD\u0B95\u0BB3\u0BCD \u0BAE\u0BC1\u0B9F\u0BBF\u0BA8\u0BCD\u0BA4\u0BA9. || \u0B87\u0BAA\u0BCD\u0BAA\u0BCB\u0BA4\u0BC1... | \u0B87\u0BB1\u0BC1\u0BA4\u0BBF \u0BB5\u0BBE\u0B95\u0BCD\u0B95\u0BC8\u0BAA\u0BCD \u0BAA\u0BCB\u0B9F\u0BC1\u0B99\u0BCD\u0B95\u0BB3\u0BCD. | \u0BAF\u0BBE\u0BB0\u0BCD \u0BB5\u0BC6\u0BB3\u0BBF\u0BAF\u0BC7\u0BB1\u0BCD\u0BB1\u0BAA\u0BCD\u0BAA\u0B9F \u0BB5\u0BC7\u0BA3\u0BCD\u0B9F\u0BC1\u0BAE\u0BCD?"]),
   "win.town": v(["The last Mafia is gone. || The Town wins!"], ["\u0906\u0916\u093C\u093F\u0930\u0940 \u092E\u093E\u092B\u093C\u093F\u092F\u093E \u092D\u0940 \u092A\u0915\u0921\u093C\u093E \u0917\u092F\u093E\u0964 || \u0917\u093E\u0901\u0935 \u0935\u093E\u0932\u094B\u0902 \u0915\u0940 \u091C\u0940\u0924 \u0939\u0941\u0908!"], ["\u0B95\u0B9F\u0BC8\u0B9A\u0BBF \u0BAE\u0BBE\u0B83\u0BAA\u0BBF\u0BAF\u0BBE\u0BB5\u0BC1\u0BAE\u0BCD \u0BAA\u0BBF\u0B9F\u0BBF\u0BAA\u0B9F\u0BCD\u0B9F\u0BBE\u0BB0\u0BCD. || \u0B95\u0BBF\u0BB0\u0BBE\u0BAE\u0BB5\u0BBE\u0B9A\u0BBF\u0B95\u0BB3\u0BCD \u0BB5\u0BC6\u0BB1\u0BCD\u0BB1\u0BBF \u0BAA\u0BC6\u0BB1\u0BCD\u0BB1\u0BA9\u0BB0\u0BCD!"]),
+  "win.jester": v(["The Jester has fooled the whole village. || The Jester wins!"], ["\u0935\u093F\u0926\u0942\u0937\u0915 \u0928\u0947 \u092A\u0942\u0930\u0947 \u0917\u093E\u0901\u0935 \u0915\u094B \u092C\u0947\u0935\u0915\u0942\u092B\u093C \u092C\u0928\u093E \u0926\u093F\u092F\u093E\u0964 || \u0935\u093F\u0926\u0942\u0937\u0915 \u091C\u0940\u0924 \u0917\u092F\u093E!"], ["\u0B95\u0BCB\u0BAE\u0BBE\u0BB3\u0BBF \u0BAE\u0BC1\u0BB4\u0BC1 \u0B95\u0BBF\u0BB0\u0BBE\u0BAE\u0BA4\u0BCD\u0BA4\u0BC8\u0BAF\u0BC1\u0BAE\u0BCD \u0B8F\u0BAE\u0BBE\u0BB1\u0BCD\u0BB1\u0BBF\u0BB5\u0BBF\u0B9F\u0BCD\u0B9F\u0BBE\u0BB0\u0BCD. || \u0B95\u0BCB\u0BAE\u0BBE\u0BB3\u0BBF \u0BB5\u0BC6\u0BB1\u0BCD\u0BB1\u0BBF \u0BAA\u0BC6\u0BB1\u0BCD\u0BB1\u0BBE\u0BB0\u0BCD!"]),
   "win.mafia": v(["Darkness settles over the village for good. || The Mafia wins."], ["\u0917\u093E\u0901\u0935 \u092A\u0930 \u0939\u092E\u0947\u0936\u093E \u0915\u0947 \u0932\u093F\u090F \u0905\u0901\u0927\u0947\u0930\u093E \u091B\u093E \u0917\u092F\u093E\u0964 || \u092E\u093E\u092B\u093C\u093F\u092F\u093E \u091C\u0940\u0924 \u0917\u092F\u093E\u0964"], ["\u0B95\u0BBF\u0BB0\u0BBE\u0BAE\u0BA4\u0BCD\u0BA4\u0BBF\u0BA9\u0BCD \u0BAE\u0BC7\u0BB2\u0BCD \u0B8E\u0BA9\u0BCD\u0BB1\u0BC6\u0BA9\u0BCD\u0BB1\u0BC1\u0BAE\u0BCD \u0B87\u0BB0\u0BC1\u0BB3\u0BCD \u0B95\u0BB5\u0BBF\u0BA8\u0BCD\u0BA4\u0BA4\u0BC1. || \u0BAE\u0BBE\u0B83\u0BAA\u0BBF\u0BAF\u0BBE \u0BB5\u0BC6\u0BB1\u0BCD\u0BB1\u0BBF \u0BAA\u0BC6\u0BB1\u0BCD\u0BB1\u0BA4\u0BC1."])
 };
 var fill = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
@@ -156,6 +171,8 @@ function spokenTime(lang, sec) {
 var SCRIPT_KEYS = Object.keys(S);
 
 // shared/game.ts
+var isMafiaRole = (r) => r === "mafia" || r === "godfather";
+var actsIn = (role, step) => step === "mafia" ? isMafiaRole(role) : role === step;
 var DEFAULT_SETTINGS = {
   mode: "table",
   doctorSelfSave: true,
@@ -171,7 +188,10 @@ var DEFAULT_SETTINGS = {
   defenseSec: 30,
   visibility: "private",
   roomName: "",
-  language: "en"
+  language: "en",
+  useGodfather: false,
+  useJester: false,
+  useVigilante: false
 };
 var clampN = (n, lo, hi, fallback) => Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : fallback;
 function normalizeSettings(input) {
@@ -194,7 +214,10 @@ function normalizeSettings(input) {
     defenseSec: clampN(Number(raw.defenseSec ?? d.defenseSec), 15, 120, d.defenseSec),
     visibility: oneOf(raw.visibility, ["open", "ask", "private"], d.visibility),
     roomName: String(raw.roomName ?? d.roomName).replace(/\s+/g, " ").trim().slice(0, 30),
-    language: oneOf(raw.language, LANG_IDS, d.language)
+    language: oneOf(raw.language, LANG_IDS, d.language),
+    useGodfather: bool(raw.useGodfather, d.useGodfather),
+    useJester: bool(raw.useJester, d.useJester),
+    useVigilante: bool(raw.useVigilante, d.useVigilante)
   };
 }
 var MIN_PLAYERS = 4;
@@ -227,11 +250,19 @@ var fail = (error) => ({ ok: false, error });
 function roleCounts(n, s) {
   const maxMafia = Math.max(1, Math.ceil(n / 2) - 1);
   const auto = Math.max(1, Math.floor(n / 3));
-  const mafia = Math.min(maxMafia, Math.max(1, s.mafiaCount ?? auto));
-  const doctor = s.useDoctor && n - mafia >= 2 ? 1 : 0;
-  const detective = s.useDetective && n - mafia - doctor >= 1 ? 1 : 0;
-  const villager = n - mafia - doctor - detective;
-  return { mafia, doctor, detective, villager };
+  const mafiaTotal = Math.min(maxMafia, Math.max(1, s.mafiaCount ?? auto));
+  const godfather = s.useGodfather && mafiaTotal >= 2 ? 1 : 0;
+  const mafia = mafiaTotal - godfather;
+  let rest = n - mafiaTotal;
+  const doctor = s.useDoctor && rest >= 2 ? 1 : 0;
+  rest -= doctor;
+  const detective = s.useDetective && rest >= 1 ? 1 : 0;
+  rest -= detective;
+  const vigilante = s.useVigilante && rest >= 3 ? 1 : 0;
+  rest -= vigilante;
+  const jester = s.useJester && rest >= 3 ? 1 : 0;
+  rest -= jester;
+  return { mafia, godfather, doctor, detective, vigilante, jester, villager: rest, mafiaTotal };
 }
 function shuffle(items, rng) {
   const a = [...items];
@@ -265,6 +296,10 @@ var Game = class _Game {
   mafiaPicks = {};
   doctorPick = null;
   detectivePick = null;
+  vigilantePick = null;
+  // a player id, or "skip" for holding fire
+  vigilanteUsed = false;
+  lastNightDeathIds = [];
   lastSaved = null;
   // day
   votes = {};
@@ -295,6 +330,9 @@ var Game = class _Game {
   // ---------- helpers ----------
   player(id) {
     return this.players.find((p) => p.id === id);
+  }
+  aliveMafia() {
+    return this.players.filter((p) => p.alive && isMafiaRole(p.role));
   }
   alive(role) {
     return this.players.filter((p) => p.alive && (!role || p.role === role));
@@ -396,14 +434,19 @@ var Game = class _Game {
     });
     return ok();
   }
-  /** A line in the table-talk feed, from a person or a bot. */
+  /** A line in the table-talk feed, from a person or a bot. Eliminated players talk in a ghost channel only they can see. */
   say(playerId, text) {
     const me = this.player(playerId);
-    if (!me?.alive) return fail("Only living players can talk.");
-    if (!["day", "vote", "defense", "dawn"].includes(this.phase)) return fail("Wait for the day to talk.");
+    if (!me) return fail("You are not in this game.");
+    const ghost = !me.alive && this.phase !== "over";
+    if (ghost) {
+      if (this.phase === "lobby" || this.phase === "reveal") return fail("Wait for the game to start.");
+    } else if (!["day", "vote", "defense", "dawn", "over"].includes(this.phase)) {
+      return fail("Wait for the day to talk.");
+    }
     const clean = text.replace(/\s+/g, " ").trim().slice(0, 140);
     if (!clean) return fail("Type something to say.");
-    this.talk.push({ seq: ++this.talkSeq, id: me.id, name: me.name, text: clean, bot: !!me.bot });
+    this.talk.push({ seq: ++this.talkSeq, id: me.id, name: me.name, text: clean, bot: !!me.bot, ghost });
     if (this.talk.length > 40) this.talk.shift();
     return ok();
   }
@@ -465,8 +508,11 @@ var Game = class _Game {
     const c = roleCounts(n, this.settings);
     const deck = [
       ...Array(c.mafia).fill("mafia"),
+      ...Array(c.godfather).fill("godfather"),
       ...Array(c.doctor).fill("doctor"),
       ...Array(c.detective).fill("detective"),
+      ...Array(c.vigilante).fill("vigilante"),
+      ...Array(c.jester).fill("jester"),
       ...Array(c.villager).fill("villager")
     ];
     shuffle(deck, this.rng).forEach((role, i) => {
@@ -479,6 +525,8 @@ var Game = class _Game {
     this.winner = null;
     this.round = 0;
     this.lastSaved = null;
+    this.vigilanteUsed = false;
+    this.lastNightDeathIds = [];
     this.lines = [];
     this.phase = "reveal";
     this.narrate(this.t("deal"), "deal");
@@ -502,10 +550,12 @@ var Game = class _Game {
     this.steps = ["mafia"];
     if (this.players.some((p) => p.role === "doctor")) this.steps.push("doctor");
     if (this.players.some((p) => p.role === "detective")) this.steps.push("detective");
+    if (this.players.some((p) => p.role === "vigilante")) this.steps.push("vigilante");
     this.stepIdx = 0;
     this.mafiaPicks = {};
     this.doctorPick = null;
     this.detectivePick = null;
+    this.vigilantePick = null;
     this.votes = {};
     this.talk = [];
     this.lastResult = null;
@@ -525,15 +575,16 @@ var Game = class _Game {
   /** Players who must act in the current night step. */
   actors() {
     const step = this.step;
-    return step ? this.alive(step) : [];
+    if (!step) return [];
+    return this.players.filter((p) => p.alive && actsIn(p.role, step) && !(step === "vigilante" && this.vigilanteUsed));
   }
   canTarget(playerId) {
     const step = this.step;
     const me = this.player(playerId);
-    if (!step || !me || !me.alive || me.role !== step) return [];
+    if (!step || !me || !me.alive || !actsIn(me.role, step) || !this.actors().some((p) => p.id === playerId)) return [];
     let pool = this.alive();
-    if (step === "mafia") pool = pool.filter((p) => p.role !== "mafia");
-    if (step === "detective") pool = pool.filter((p) => p.id !== me.id);
+    if (step === "mafia") pool = pool.filter((p) => !isMafiaRole(p.role));
+    if (step === "detective" || step === "vigilante") pool = pool.filter((p) => p.id !== me.id);
     if (step === "doctor") {
       if (!this.settings.doctorSelfSave) pool = pool.filter((p) => p.id !== me.id);
       if (!this.settings.doctorRepeatSave && this.lastSaved) pool = pool.filter((p) => p.id !== this.lastSaved);
@@ -544,7 +595,13 @@ var Game = class _Game {
     const step = this.step;
     if (!step) return fail("It is not night.");
     const me = this.player(playerId);
-    if (!me?.alive || me.role !== step) return fail("It is not your turn.");
+    if (!me?.alive || !actsIn(me.role, step)) return fail("It is not your turn.");
+    if (step === "vigilante") {
+      if (this.vigilanteUsed) return fail("You have already used your bullet.");
+      if (targetId !== "skip" && !this.canTarget(playerId).includes(targetId)) return fail("You cannot choose that player.");
+      this.vigilantePick = targetId;
+      return ok();
+    }
     if (!this.canTarget(playerId).includes(targetId)) return fail("You cannot choose that player.");
     if (step === "mafia") this.mafiaPicks[playerId] = targetId;
     if (step === "doctor") this.doctorPick = targetId;
@@ -570,6 +627,7 @@ var Game = class _Game {
       return picks.every(Boolean) && new Set(picks).size === 1;
     }
     if (step === "doctor") return this.doctorPick !== null;
+    if (step === "vigilante") return this.vigilantePick !== null;
     return this.detectivePick !== null;
   }
   /** Move to the next night step, or resolve the night. `force` settles missing picks. */
@@ -587,7 +645,7 @@ var Game = class _Game {
   }
   mafiaTarget() {
     const tally = /* @__PURE__ */ new Map();
-    for (const m of this.alive("mafia")) {
+    for (const m of this.aliveMafia()) {
       const t = this.mafiaPicks[m.id];
       if (t) tally.set(t, (tally.get(t) ?? 0) + 1);
     }
@@ -598,15 +656,27 @@ var Game = class _Game {
   }
   resolveNight() {
     const target = this.mafiaTarget();
-    const saved = target !== null && target === this.doctorPick;
+    const lang = this.settings.language;
+    const shot = this.vigilantePick && this.vigilantePick !== "skip" ? this.vigilantePick : null;
+    if (shot) this.vigilanteUsed = true;
+    const attacked = [...new Set([target, shot].filter((x) => !!x))];
+    const dead = attacked.filter((id) => id !== this.doctorPick).map((id) => this.player(id));
     this.lastSaved = this.doctorPick;
-    const victim = target && !saved ? this.player(target) : null;
-    if (victim) victim.alive = false;
-    this.lastNightDeathId = victim?.id ?? null;
+    for (const v2 of dead) v2.alive = false;
+    this.lastNightDeathIds = dead.map((d) => d.id);
+    this.lastNightDeathId = dead[0]?.id ?? null;
     this.phase = "dawn";
     const open = this.t(this.classic() ? "dawn.open.classic" : "dawn.open.remote");
-    const role = victim && this.settings.revealRoleOnDeath ? this.t("dawn.role", { were: wereWord(this.settings.language, victim.role) }) : "";
-    this.narrate(open + (victim ? this.t("dawn.death", { name: victim.name }) + role : this.t("dawn.none")), victim ? "dawn-death" : "dawn");
+    const reveal = this.settings.revealRoleOnDeath;
+    let body;
+    if (dead.length === 0) {
+      body = this.t("dawn.none");
+    } else if (dead.length === 1) {
+      body = this.t("dawn.death", { name: dead[0].name }) + (reveal ? this.t("dawn.role", { were: wereWord(lang, dead[0].role) }) : "");
+    } else {
+      body = this.t("dawn.two", { a: dead[0].name, b: dead[1].name }) + (reveal ? dead.map((d) => this.t("dawn.role.named", { name: d.name, were: wereWord(lang, d.role) })).join("") : "");
+    }
+    this.narrate(open + body, dead.length ? "dawn-death" : "dawn");
     this.checkWin();
   }
   // ---------- day ----------
@@ -677,6 +747,10 @@ var Game = class _Game {
     this.lastResult = { text, eliminatedId: eliminated?.id ?? null };
     this.phase = "result";
     this.narrate(text, eliminated ? "elim" : "noelim");
+    if (eliminated?.role === "jester") {
+      this.finish("jester", this.t("win.jester"), "win-jester");
+      return;
+    }
     this.checkWin();
   }
   resolvePoll() {
@@ -723,7 +797,7 @@ var Game = class _Game {
   }
   // ---------- end ----------
   checkWin() {
-    const mafia = this.alive("mafia").length;
+    const mafia = this.aliveMafia().length;
     const town = this.alive().length - mafia;
     if (mafia === 0) this.finish("town", this.t("win.town"), "win-town");
     else if (mafia >= town) this.finish("mafia", this.t("win.mafia"), "win-mafia");
@@ -745,6 +819,9 @@ var Game = class _Game {
     this.defendants = [];
     this.defenseIdx = 0;
     this.voteStage = "final";
+    this.vigilanteUsed = false;
+    this.vigilantePick = null;
+    this.lastNightDeathIds = [];
     for (const p of this.players) {
       p.role = null;
       p.alive = true;
@@ -759,7 +836,7 @@ var Game = class _Game {
     const me = this.player(playerId);
     const over = this.phase === "over";
     const seeAll = over || me && !me.alive && this.settings.deadSeeRoles;
-    const showRole = (p) => seeAll || p.id === me?.id || me?.role === "mafia" && p.role === "mafia" || !p.alive && this.settings.revealRoleOnDeath;
+    const showRole = (p) => seeAll || p.id === me?.id || isMafiaRole(me?.role) && isMafiaRole(p.role) || !p.alive && this.settings.revealRoleOnDeath;
     const counts = this.phase === "vote" || this.phase === "defense" || this.phase === "result" ? this.tally() : {};
     const step = this.step;
     return {
@@ -769,7 +846,7 @@ var Game = class _Game {
       hostId: this.hostId,
       winner: this.winner,
       lines: this.lines.slice(-12),
-      talk: this.talk.slice(-14),
+      talk: this.talk.filter((t) => !t.ghost || me && !me.alive || this.phase === "over").slice(-14),
       joinStatus: me ? null : playerId ? this.blocked.includes(playerId) ? "blocked" : this.pending.some((p) => p.id === playerId) ? "pending" : this.declined.includes(playerId) ? "declined" : null : null,
       pending: playerId && playerId === this.hostId ? this.pending : [],
       players: this.players.map((p) => ({
@@ -787,19 +864,21 @@ var Game = class _Game {
         role: me.role,
         alive: me.alive,
         isHost: me.id === this.hostId,
-        notes: this.notes[me.id] ?? []
+        notes: this.notes[me.id] ?? [],
+        bulletUsed: me.role === "vigilante" ? this.vigilanteUsed : false
       } : null,
       night: {
         step: this.phase === "night" ? step : null,
         yourTargets: me ? this.canTarget(me.id) : [],
-        yourPick: me?.role === "mafia" ? this.mafiaPicks[me.id] ?? null : me?.role === "doctor" ? this.doctorPick : me?.role === "detective" ? this.detectivePick : null,
-        mafiaPicks: me?.role === "mafia" && this.step === "mafia" ? this.mafiaPicks : {}
+        yourPick: isMafiaRole(me?.role) ? this.mafiaPicks[me.id] ?? null : me?.role === "doctor" ? this.doctorPick : me?.role === "detective" ? this.detectivePick : me?.role === "vigilante" ? this.vigilantePick : null,
+        mafiaPicks: isMafiaRole(me?.role) && this.step === "mafia" ? this.mafiaPicks : {}
       },
       vote: {
         counts,
         yourVote: me ? this.votes[me.id] ?? null : null,
         stage: this.voteStage,
         voted: this.phase === "vote" ? Object.keys(this.votes).length : 0,
+        byWho: me && !me.alive && this.phase === "vote" ? this.votes : {},
         eligible: this.alive().length
       },
       result: this.lastResult,
@@ -847,11 +926,11 @@ function tasks(room, g, t) {
   const mem = room.bots;
   for (const b of bots) {
     if (g.phase === "reveal" && !b.seenRole) out.push({ id: `ack:${b.id}`, bot: b, min: t.botRevealMinMs, max: t.botRevealMaxMs });
-    if (g.phase === "night" && b.alive && g.step === b.role && g.canTarget(b.id).length) {
+    if (g.phase === "night" && b.alive && actsIn(b.role, g.step) && g.canTarget(b.id).length) {
       const mine = g.actors();
-      const humansMafia = b.role === "mafia" ? mine.filter((m) => !m.bot) : [];
+      const humansMafia = isMafiaRole(b.role) ? mine.filter((m) => !m.bot) : [];
       const waitingOnHuman = humansMafia.length > 0 && humansMafia.every((m) => !g.mafiaPicks[m.id]);
-      const already = b.role === "mafia" ? g.mafiaPicks[b.id] : b.role === "doctor" ? g.doctorPick : g.detectivePick;
+      const already = isMafiaRole(b.role) ? g.mafiaPicks[b.id] : b.role === "doctor" ? g.doctorPick : b.role === "vigilante" ? g.vigilantePick : g.detectivePick;
       if (!waitingOnHuman && !already) out.push({ id: `night:${b.id}`, bot: b, min: t.botNightMinMs, max: t.botNightMaxMs });
     }
     if (g.phase === "vote" && b.alive && !g.votes[b.id]) {
@@ -909,12 +988,15 @@ function act(room, g, id, bot, rng) {
   } else if (kind === "night") {
     const allowed = new Set(g.canTarget(bot.id));
     let pool = g.alive().filter((p) => allowed.has(p.id));
-    if (bot.role === "mafia") {
+    if (isMafiaRole(bot.role)) {
       const partner = Object.entries(g.mafiaPicks).find(([mid]) => mid !== bot.id);
       const target = partner ? g.player(partner[1]) : chooseTarget(g, bot, pool, rng);
       if (target) g.nightAction(bot.id, target.id);
     } else if (bot.role === "doctor") {
       g.nightAction(bot.id, pickOf(pool, rng).id);
+    } else if (bot.role === "vigilante") {
+      const shoot = g.round >= 2 && rng() < 0.3;
+      g.nightAction(bot.id, shoot ? pickOf(pool, rng).id : "skip");
     } else {
       const t = chooseTarget(g, bot, pool, rng);
       if (t) g.nightAction(bot.id, t.id);
@@ -923,18 +1005,18 @@ function act(room, g, id, bot, rng) {
     const pool = g.phase === "vote" && g.voteStage === "final" && g.defendants.length ? g.alive().filter((p) => g.defendants.includes(p.id) && p.id !== bot.id) : suspects(g, bot);
     const final = g.voteStage === "final" && g.defendants.length > 0;
     let target = "skip";
-    const mafiaAllies = new Set(g.alive("mafia").map((p) => p.id));
+    const mafiaAllies = new Set(g.aliveMafia().map((p) => p.id));
     if (!final) {
-      const choices = bot.role === "mafia" ? pool.filter((p) => !mafiaAllies.has(p.id)) : pool;
+      const choices = isMafiaRole(bot.role) ? pool.filter((p) => !mafiaAllies.has(p.id)) : pool;
       const counts = g.tally();
       const leaning = choices.filter((p) => (counts[p.id] ?? 0) > 0).sort((a, b) => (counts[b.id] ?? 0) - (counts[a.id] ?? 0))[0];
-      const pickChoice = bot.role === "mafia" && leaning && rng() < 0.6 ? leaning : chooseTarget(g, bot, choices, rng);
+      const pickChoice = isMafiaRole(bot.role) && leaning && rng() < 0.6 ? leaning : chooseTarget(g, bot, choices, rng);
       if (pickChoice && rng() > 0.08) target = pickChoice.id;
     } else if (pool.length) {
       const d = pool[0];
       const known = (g.notes[bot.id] ?? []).find((n) => n.targetId === d.id);
       let eliminate;
-      if (bot.role === "mafia") eliminate = !mafiaAllies.has(d.id);
+      if (isMafiaRole(bot.role)) eliminate = !mafiaAllies.has(d.id);
       else if (known) eliminate = known.isMafia;
       else eliminate = rng() < 0.6;
       if (eliminate) target = d.id;
@@ -951,7 +1033,7 @@ function act(room, g, id, bot, rng) {
       text = pickOf(L.claim, rng);
     } else {
       let pool = others;
-      if (bot.role === "mafia") pool = others.filter((p) => !g.alive("mafia").some((m) => m.id === p.id));
+      if (isMafiaRole(bot.role)) pool = others.filter((p) => !g.aliveMafia().some((m) => m.id === p.id));
       const t = bot.role === "detective" ? chooseTarget(g, bot, pool, rng) : pickOf(pool.length ? pool : others, rng);
       text = t ? fill2(pickOf(L.accuse, rng), { t: name(t) }) : pickOf(L.claim, rng);
     }

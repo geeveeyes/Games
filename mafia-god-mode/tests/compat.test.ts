@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { Game } from "../shared/game";
 import { handle } from "../shared/handler";
 import { INSTANT_TIMING, type RoomData } from "../shared/room";
-import { NEWER_TOP_LEVEL, V1_SETTINGS, V2_SETTINGS, V3_SETTINGS, oldLobby } from "../shared/legacyFixtures";
+import { NEWER_SETTINGS, NEWER_TOP_LEVEL, V1_SETTINGS, V2_SETTINGS, V3_SETTINGS, V4_SETTINGS, oldLobby } from "../shared/legacyFixtures";
 import { MemoryStore } from "../shared/store";
 
 async function storeWith(game: unknown) {
@@ -21,6 +21,7 @@ const EVERY_SETTING_CHANGE: Record<string, unknown>[] = [
   { roomName: "Family night" },
   { useDoctor: false }, { useDetective: false }, { doctorSelfSave: false }, { doctorRepeatSave: false },
   { revealRoleOnDeath: true }, { deadSeeRoles: true },
+  { language: "hi" }, { language: "ta" }, { useGodfather: true }, { useJester: true }, { useVigilante: true },
   { mafiaCount: 2 }, { mafiaCount: null }, { dayTimerSec: 60 }, { voteTimerSec: 30 }, { defenseSec: 45 },
 ];
 
@@ -29,6 +30,7 @@ describe("rooms saved by older versions", () => {
     ["v1 (first deploy)", V1_SETTINGS, false],
     ["v2 (trial vote)", V2_SETTINGS, false],
     ["v3 (rooms directory)", V3_SETTINGS, true],
+    ["v4 (narrator languages)", V4_SETTINGS, true],
   ];
 
   for (const [name, settings, newer] of shapes) {
@@ -44,7 +46,7 @@ describe("rooms saved by older versions", () => {
       const { call } = await storeWith(oldLobby(settings, newer));
       const v = await call({ action: "poll", code: "OLDX", token: "host" });
       if (!v.ok) throw new Error(v.error);
-      for (const key of ["mode", "voteStyle", "defenseSec", "visibility", "roomName", "dayTimerSec", "voteTimerSec", "language"]) {
+      for (const key of ["mode", "voteStyle", "defenseSec", "visibility", "roomName", "dayTimerSec", "voteTimerSec", "language", "useGodfather", "useJester", "useVigilante"]) {
         expect(v.view.settings, `missing ${key}`).toHaveProperty(key);
       }
       expect(v.view.settings.language).toBe("en"); // settings saved before narrator languages existed
@@ -65,7 +67,7 @@ describe("rooms saved by older versions", () => {
     g.beginNight();
     const json = JSON.parse(JSON.stringify(g.toJSON())) as Record<string, any>;
     for (const k of NEWER_TOP_LEVEL) delete json[k];
-    for (const k of ["voteStyle", "defenseSec", "visibility", "roomName"]) delete json.settings[k];
+    for (const k of NEWER_SETTINGS) delete json.settings[k];
     for (const l of json.lines) delete l.cue;
     const { call } = await storeWith(json);
     const v = await call({ action: "poll", code: "OLDX", token: "host" });

@@ -2,7 +2,7 @@
 // the table-talk feed, and vote. They act lazily (on any poll after their due time), so they work
 // on serverless hosting. Delays are random, so a bot's speed never gives its role away.
 import type { Game, Persona, Player } from "./game";
-import { shuffle } from "./game";
+import { actsIn, isMafiaRole, shuffle } from "./game";
 import type { RoomData, Timing } from "./room";
 
 export interface BotMem {
@@ -50,11 +50,11 @@ function tasks(room: RoomData, g: Game, t: Timing): { id: string; bot: Player; m
   const mem = room.bots!;
   for (const b of bots) {
     if (g.phase === "reveal" && !b.seenRole) out.push({ id: `ack:${b.id}`, bot: b, min: t.botRevealMinMs, max: t.botRevealMaxMs });
-    if (g.phase === "night" && b.alive && g.step === b.role && g.canTarget(b.id).length) {
+    if (g.phase === "night" && b.alive && actsIn(b.role, g.step) && g.canTarget(b.id).length) {
       const mine = g.actors();
-      const humansMafia = b.role === "mafia" ? mine.filter((m) => !m.bot) : [];
+      const humansMafia = isMafiaRole(b.role) ? mine.filter((m) => !m.bot) : [];
       const waitingOnHuman = humansMafia.length > 0 && humansMafia.every((m) => !g.mafiaPicks[m.id]);
-      const already = b.role === "mafia" ? g.mafiaPicks[b.id] : b.role === "doctor" ? g.doctorPick : g.detectivePick;
+      const already = isMafiaRole(b.role) ? g.mafiaPicks[b.id] : b.role === "doctor" ? g.doctorPick : b.role === "vigilante" ? g.vigilantePick : g.detectivePick;
       if (!waitingOnHuman && !already) out.push({ id: `night:${b.id}`, bot: b, min: t.botNightMinMs, max: t.botNightMaxMs });
     }
     if (g.phase === "vote" && b.alive && !g.votes[b.id]) {
@@ -121,13 +121,17 @@ function act(room: RoomData, g: Game, id: string, bot: Player, rng: Rng) {
   } else if (kind === "night") {
     const allowed = new Set(g.canTarget(bot.id));
     let pool = g.alive().filter((p) => allowed.has(p.id));
-    if (bot.role === "mafia") {
+    if (isMafiaRole(bot.role)) {
       // Copy a partner's pick so the team agrees; otherwise choose one and the rest will follow.
       const partner = Object.entries(g.mafiaPicks).find(([mid]) => mid !== bot.id);
       const target = partner ? g.player(partner[1]) : chooseTarget(g, bot, pool, rng);
       if (target) g.nightAction(bot.id, target.id);
     } else if (bot.role === "doctor") {
       g.nightAction(bot.id, pickOf(pool, rng).id);
+    } else if (bot.role === "vigilante") {
+      // Mostly hold fire. The single bullet is rarely spent, and not on the first night.
+      const shoot = g.round >= 2 && rng() < 0.3;
+      g.nightAction(bot.id, shoot ? pickOf(pool, rng).id : "skip");
     } else {
       const t = chooseTarget(g, bot, pool, rng);
       if (t) g.nightAction(bot.id, t.id);
@@ -136,19 +140,19 @@ function act(room: RoomData, g: Game, id: string, bot: Player, rng: Rng) {
     const pool = g.phase === "vote" && g.voteStage === "final" && g.defendants.length ? g.alive().filter((p) => g.defendants.includes(p.id) && p.id !== bot.id) : suspects(g, bot);
     const final = g.voteStage === "final" && g.defendants.length > 0;
     let target: string = "skip";
-    const mafiaAllies = new Set(g.alive("mafia").map((p) => p.id));
+    const mafiaAllies = new Set(g.aliveMafia().map((p) => p.id));
     if (!final) {
-      const choices = bot.role === "mafia" ? pool.filter((p) => !mafiaAllies.has(p.id)) : pool;
+      const choices = isMafiaRole(bot.role) ? pool.filter((p) => !mafiaAllies.has(p.id)) : pool;
       // Mafia bots lean toward whoever the table is already suspecting.
       const counts = g.tally();
       const leaning = choices.filter((p) => (counts[p.id] ?? 0) > 0).sort((a, b) => (counts[b.id] ?? 0) - (counts[a.id] ?? 0))[0];
-      const pickChoice = bot.role === "mafia" && leaning && rng() < 0.6 ? leaning : chooseTarget(g, bot, choices, rng);
+      const pickChoice = isMafiaRole(bot.role) && leaning && rng() < 0.6 ? leaning : chooseTarget(g, bot, choices, rng);
       if (pickChoice && rng() > 0.08) target = pickChoice.id;
     } else if (pool.length) {
       const d = pool[0];
       const known = (g.notes[bot.id] ?? []).find((n) => n.targetId === d.id);
       let eliminate: boolean;
-      if (bot.role === "mafia") eliminate = !mafiaAllies.has(d.id);
+      if (isMafiaRole(bot.role)) eliminate = !mafiaAllies.has(d.id);
       else if (known) eliminate = known.isMafia;
       else eliminate = rng() < 0.6;
       if (eliminate) target = d.id;
@@ -165,7 +169,7 @@ function act(room: RoomData, g: Game, id: string, bot: Player, rng: Rng) {
       text = pickOf(L.claim, rng);
     } else {
       let pool = others;
-      if (bot.role === "mafia") pool = others.filter((p) => !g.alive("mafia").some((m) => m.id === p.id));
+      if (isMafiaRole(bot.role)) pool = others.filter((p) => !g.aliveMafia().some((m) => m.id === p.id));
       const t = bot.role === "detective" ? chooseTarget(g, bot, pool, rng) : pickOf(pool.length ? pool : others, rng);
       text = t ? fill(pickOf(L.accuse, rng), { t: name(t) }) : pickOf(L.claim, rng);
     }

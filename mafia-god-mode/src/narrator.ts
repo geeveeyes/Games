@@ -58,12 +58,12 @@ export function preloadClips(lang: Lang): Promise<void> {
 if (typeof window !== "undefined") (window as unknown as { __mgmClipId: typeof clipId }).__mgmClipId = clipId; // lets browser tests compute clip names
 
 const MOOD: Partial<Record<Cue, Mood>> = {
-  deal: "night", night: "night", mafia: "night", doctor: "night", detective: "night",
+  deal: "night", night: "night", mafia: "night", doctor: "night", detective: "night", vigilante: "night",
   dawn: "day", "dawn-death": "day", day: "day", vote: "tense", elim: "night", noelim: "day",
-  "win-town": "win", "win-mafia": "lose",
+  "win-town": "win", "win-mafia": "lose", "win-jester": "win",
 };
 const STING: Partial<Record<Cue, Sting>> = {
-  night: "gong", dawn: "bell", "dawn-death": "death", elim: "death", "win-town": "reveal", "win-mafia": "death",
+  night: "gong", dawn: "bell", "dawn-death": "death", elim: "death", "win-town": "reveal", "win-mafia": "death", "win-jester": "reveal",
 };
 
 /** The music that fits a phase, used when the narrator is switched on part-way through a game. */
@@ -72,7 +72,7 @@ function moodFor(v: ClientView): Mood {
     case "reveal": case "night": return "night";
     case "dawn": case "day": case "result": return "day";
     case "vote": case "defense": return "tense";
-    case "over": return v.winner === "town" ? "win" : "lose";
+    case "over": return v.winner === "mafia" ? "lose" : "win";
     default: return "off";
   }
 }

@@ -4,15 +4,19 @@ import { type Lang, LANG_IDS, roleWord, say, spokenTime, wereWord } from "./scri
 // Every secret (roles, night picks, detective results) stays in this object;
 // `viewFor` is the only way state leaves it.
 
-export type Role = "mafia" | "doctor" | "detective" | "villager";
+export type Role = "mafia" | "godfather" | "doctor" | "detective" | "vigilante" | "jester" | "villager";
+/** The Mafia team: regular Mafia and the Godfather. */
+export const isMafiaRole = (r: Role | null | undefined): boolean => r === "mafia" || r === "godfather";
 export type Phase = "lobby" | "reveal" | "night" | "dawn" | "day" | "vote" | "defense" | "result" | "over";
 export type VoteStyle = "trial" | "quick";
 /** open: listed, one-click join. ask: listed, the host approves each person. private: not listed, code only. */
 export type Visibility = "open" | "ask" | "private";
 export type VoteStage = "poll" | "final";
 export type Mode = "table" | "phones" | "remote";
-export type NightStep = "mafia" | "doctor" | "detective";
-export type Winner = "town" | "mafia";
+export type NightStep = "mafia" | "doctor" | "detective" | "vigilante";
+/** Which night step a role acts in. The Mafia step belongs to the whole Mafia team. */
+export const actsIn = (role: Role | null | undefined, step: NightStep | null): boolean => step === "mafia" ? isMafiaRole(role) : role === step;
+export type Winner = "town" | "mafia" | "jester";
 
 export interface Settings {
   mode: Mode;
@@ -30,6 +34,9 @@ export interface Settings {
   visibility: Visibility;
   roomName: string;
   language: Lang; // language of the narrator
+  useGodfather: boolean; // a Mafia member who looks innocent to the Detective
+  useJester: boolean; // wins alone if voted out by day
+  useVigilante: boolean; // town member with one night shot per game
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -48,6 +55,9 @@ export const DEFAULT_SETTINGS: Settings = {
   visibility: "private",
   roomName: "",
   language: "en",
+  useGodfather: false,
+  useJester: false,
+  useVigilante: false,
 };
 
 const clampN = (n: number, lo: number, hi: number, fallback: number) => (Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : fallback);
@@ -77,6 +87,9 @@ export function normalizeSettings(input: Partial<Record<keyof Settings, unknown>
     visibility: oneOf(raw.visibility, ["open", "ask", "private"], d.visibility),
     roomName: String(raw.roomName ?? d.roomName).replace(/\s+/g, " ").trim().slice(0, 30),
     language: oneOf(raw.language, LANG_IDS, d.language),
+    useGodfather: bool(raw.useGodfather, d.useGodfather),
+    useJester: bool(raw.useJester, d.useJester),
+    useVigilante: bool(raw.useVigilante, d.useVigilante),
   };
 }
 
@@ -91,6 +104,7 @@ export interface Talk {
   name: string;
   text: string;
   bot: boolean;
+  ghost?: boolean; // said by an eliminated player; only eliminated players see it
 }
 
 export const BOT_NAMES = [
@@ -112,8 +126,8 @@ export interface Player {
 
 /** Narration text uses "|" for a short pause and "||" for a long one; the cue drives music and sound effects. */
 export type Cue =
-  | "deal" | "night" | "mafia" | "doctor" | "detective" | "dawn" | "dawn-death"
-  | "day" | "vote" | "defense" | "final" | "elim" | "noelim" | "win-town" | "win-mafia";
+  | "deal" | "night" | "mafia" | "doctor" | "detective" | "vigilante" | "dawn" | "dawn-death"
+  | "day" | "vote" | "defense" | "final" | "elim" | "noelim" | "win-town" | "win-mafia" | "win-jester";
 
 export interface Line {
   seq: number;
@@ -134,15 +148,26 @@ const fail = (error: string): Result<never> => ({ ok: false, error });
 
 export type Rng = () => number;
 
-/** Suggested role mix for a player count. */
-export function roleCounts(n: number, s: Pick<Settings, "useDoctor" | "useDetective" | "mafiaCount">) {
+/**
+ * Suggested role mix for a player count. Optional roles only appear when enough ordinary villagers remain,
+ * so the game never turns into all special roles.
+ */
+export function roleCounts(n: number, s: Pick<Settings, "useDoctor" | "useDetective" | "mafiaCount"> & Partial<Pick<Settings, "useGodfather" | "useJester" | "useVigilante">>) {
   const maxMafia = Math.max(1, Math.ceil(n / 2) - 1);
   const auto = Math.max(1, Math.floor(n / 3));
-  const mafia = Math.min(maxMafia, Math.max(1, s.mafiaCount ?? auto));
-  const doctor = s.useDoctor && n - mafia >= 2 ? 1 : 0;
-  const detective = s.useDetective && n - mafia - doctor >= 1 ? 1 : 0;
-  const villager = n - mafia - doctor - detective;
-  return { mafia, doctor, detective, villager };
+  const mafiaTotal = Math.min(maxMafia, Math.max(1, s.mafiaCount ?? auto));
+  const godfather = s.useGodfather && mafiaTotal >= 2 ? 1 : 0;
+  const mafia = mafiaTotal - godfather;
+  let rest = n - mafiaTotal;
+  const doctor = s.useDoctor && rest >= 2 ? 1 : 0;
+  rest -= doctor;
+  const detective = s.useDetective && rest >= 1 ? 1 : 0;
+  rest -= detective;
+  const vigilante = s.useVigilante && rest >= 3 ? 1 : 0;
+  rest -= vigilante;
+  const jester = s.useJester && rest >= 3 ? 1 : 0;
+  rest -= jester;
+  return { mafia, godfather, doctor, detective, vigilante, jester, villager: rest, mafiaTotal };
 }
 
 export function shuffle<T>(items: T[], rng: Rng): T[] {
@@ -175,6 +200,9 @@ export class Game {
   mafiaPicks: Record<string, string> = {};
   doctorPick: string | null = null;
   detectivePick: string | null = null;
+  vigilantePick: string | null = null; // a player id, or "skip" for holding fire
+  vigilanteUsed = false;
+  lastNightDeathIds: string[] = [];
   lastSaved: string | null = null;
 
   // day
@@ -209,6 +237,9 @@ export class Game {
   // ---------- helpers ----------
   player(id: string | null | undefined): Player | undefined {
     return this.players.find((p) => p.id === id);
+  }
+  aliveMafia(): Player[] {
+    return this.players.filter((p) => p.alive && isMafiaRole(p.role));
   }
   alive(role?: Role): Player[] {
     return this.players.filter((p) => p.alive && (!role || p.role === role));
@@ -312,14 +343,19 @@ export class Game {
     return ok();
   }
 
-  /** A line in the table-talk feed, from a person or a bot. */
+  /** A line in the table-talk feed, from a person or a bot. Eliminated players talk in a ghost channel only they can see. */
   say(playerId: string, text: string): Result {
     const me = this.player(playerId);
-    if (!me?.alive) return fail("Only living players can talk.");
-    if (!["day", "vote", "defense", "dawn"].includes(this.phase)) return fail("Wait for the day to talk.");
+    if (!me) return fail("You are not in this game.");
+    const ghost = !me.alive && this.phase !== "over";
+    if (ghost) {
+      if (this.phase === "lobby" || this.phase === "reveal") return fail("Wait for the game to start.");
+    } else if (!["day", "vote", "defense", "dawn", "over"].includes(this.phase)) {
+      return fail("Wait for the day to talk.");
+    }
     const clean = text.replace(/\s+/g, " ").trim().slice(0, 140);
     if (!clean) return fail("Type something to say.");
-    this.talk.push({ seq: ++this.talkSeq, id: me.id, name: me.name, text: clean, bot: !!me.bot });
+    this.talk.push({ seq: ++this.talkSeq, id: me.id, name: me.name, text: clean, bot: !!me.bot, ghost });
     if (this.talk.length > 40) this.talk.shift();
     return ok();
   }
@@ -388,8 +424,11 @@ export class Game {
     const c = roleCounts(n, this.settings);
     const deck: Role[] = [
       ...Array<Role>(c.mafia).fill("mafia"),
+      ...Array<Role>(c.godfather).fill("godfather"),
       ...Array<Role>(c.doctor).fill("doctor"),
       ...Array<Role>(c.detective).fill("detective"),
+      ...Array<Role>(c.vigilante).fill("vigilante"),
+      ...Array<Role>(c.jester).fill("jester"),
       ...Array<Role>(c.villager).fill("villager"),
     ];
     shuffle(deck, this.rng).forEach((role, i) => {
@@ -402,6 +441,8 @@ export class Game {
     this.winner = null;
     this.round = 0;
     this.lastSaved = null;
+    this.vigilanteUsed = false;
+    this.lastNightDeathIds = [];
     this.lines = [];
     this.phase = "reveal";
     this.narrate(this.t("deal"), "deal");
@@ -427,10 +468,12 @@ export class Game {
     this.steps = ["mafia"];
     if (this.players.some((p) => p.role === "doctor")) this.steps.push("doctor");
     if (this.players.some((p) => p.role === "detective")) this.steps.push("detective");
+    if (this.players.some((p) => p.role === "vigilante")) this.steps.push("vigilante");
     this.stepIdx = 0;
     this.mafiaPicks = {};
     this.doctorPick = null;
     this.detectivePick = null;
+    this.vigilantePick = null;
     this.votes = {};
     this.talk = [];
     this.lastResult = null;
@@ -452,16 +495,17 @@ export class Game {
   /** Players who must act in the current night step. */
   actors(): Player[] {
     const step = this.step;
-    return step ? this.alive(step) : [];
+    if (!step) return [];
+    return this.players.filter((p) => p.alive && actsIn(p.role, step) && !(step === "vigilante" && this.vigilanteUsed));
   }
 
   canTarget(playerId: string): string[] {
     const step = this.step;
     const me = this.player(playerId);
-    if (!step || !me || !me.alive || me.role !== step) return [];
+    if (!step || !me || !me.alive || !actsIn(me.role, step) || !this.actors().some((p) => p.id === playerId)) return [];
     let pool = this.alive();
-    if (step === "mafia") pool = pool.filter((p) => p.role !== "mafia");
-    if (step === "detective") pool = pool.filter((p) => p.id !== me.id);
+    if (step === "mafia") pool = pool.filter((p) => !isMafiaRole(p.role));
+    if (step === "detective" || step === "vigilante") pool = pool.filter((p) => p.id !== me.id);
     if (step === "doctor") {
       if (!this.settings.doctorSelfSave) pool = pool.filter((p) => p.id !== me.id);
       if (!this.settings.doctorRepeatSave && this.lastSaved) pool = pool.filter((p) => p.id !== this.lastSaved);
@@ -473,7 +517,13 @@ export class Game {
     const step = this.step;
     if (!step) return fail("It is not night.");
     const me = this.player(playerId);
-    if (!me?.alive || me.role !== step) return fail("It is not your turn.");
+    if (!me?.alive || !actsIn(me.role, step)) return fail("It is not your turn.");
+    if (step === "vigilante") {
+      if (this.vigilanteUsed) return fail("You have already used your bullet.");
+      if (targetId !== "skip" && !this.canTarget(playerId).includes(targetId)) return fail("You cannot choose that player.");
+      this.vigilantePick = targetId; // "skip" holds fire
+      return ok();
+    }
     if (!this.canTarget(playerId).includes(targetId)) return fail("You cannot choose that player.");
     if (step === "mafia") this.mafiaPicks[playerId] = targetId;
     if (step === "doctor") this.doctorPick = targetId;
@@ -481,6 +531,7 @@ export class Game {
       if (this.detectivePick) return fail("You already investigated tonight.");
       this.detectivePick = targetId;
       const target = this.player(targetId)!;
+      // The Godfather is a different role from "mafia", so the Detective sees him as innocent.
       (this.notes[playerId] ??= []).push({ night: this.round, targetId, isMafia: target.role === "mafia" });
     }
     return ok();
@@ -501,6 +552,7 @@ export class Game {
       return picks.every(Boolean) && new Set(picks).size === 1;
     }
     if (step === "doctor") return this.doctorPick !== null;
+    if (step === "vigilante") return this.vigilantePick !== null;
     return this.detectivePick !== null;
   }
 
@@ -520,7 +572,7 @@ export class Game {
 
   private mafiaTarget(): string | null {
     const tally = new Map<string, number>();
-    for (const m of this.alive("mafia")) {
+    for (const m of this.aliveMafia()) {
       const t = this.mafiaPicks[m.id];
       if (t) tally.set(t, (tally.get(t) ?? 0) + 1);
     }
@@ -532,15 +584,28 @@ export class Game {
 
   private resolveNight() {
     const target = this.mafiaTarget();
-    const saved = target !== null && target === this.doctorPick;
+    const lang = this.settings.language;
+    const shot = this.vigilantePick && this.vigilantePick !== "skip" ? this.vigilantePick : null;
+    if (shot) this.vigilanteUsed = true; // one bullet per game
+    // The Doctor's save protects against any one attack.
+    const attacked = [...new Set([target, shot].filter((x): x is string => !!x))];
+    const dead = attacked.filter((id) => id !== this.doctorPick).map((id) => this.player(id)!);
     this.lastSaved = this.doctorPick;
-    const victim = target && !saved ? this.player(target)! : null;
-    if (victim) victim.alive = false;
-    this.lastNightDeathId = victim?.id ?? null;
+    for (const v of dead) v.alive = false;
+    this.lastNightDeathIds = dead.map((d) => d.id);
+    this.lastNightDeathId = dead[0]?.id ?? null;
     this.phase = "dawn";
     const open = this.t(this.classic() ? "dawn.open.classic" : "dawn.open.remote");
-    const role = victim && this.settings.revealRoleOnDeath ? this.t("dawn.role", { were: wereWord(this.settings.language, victim.role!) }) : "";
-    this.narrate(open + (victim ? this.t("dawn.death", { name: victim.name }) + role : this.t("dawn.none")), victim ? "dawn-death" : "dawn");
+    const reveal = this.settings.revealRoleOnDeath;
+    let body: string;
+    if (dead.length === 0) {
+      body = this.t("dawn.none");
+    } else if (dead.length === 1) {
+      body = this.t("dawn.death", { name: dead[0].name }) + (reveal ? this.t("dawn.role", { were: wereWord(lang, dead[0].role!) }) : "");
+    } else {
+      body = this.t("dawn.two", { a: dead[0].name, b: dead[1].name }) + (reveal ? dead.map((d) => this.t("dawn.role.named", { name: d.name, were: wereWord(lang, d.role!) })).join("") : "");
+    }
+    this.narrate(open + body, dead.length ? "dawn-death" : "dawn");
     this.checkWin();
   }
 
@@ -618,6 +683,10 @@ export class Game {
     this.lastResult = { text, eliminatedId: eliminated?.id ?? null };
     this.phase = "result";
     this.narrate(text, eliminated ? "elim" : "noelim");
+    if (eliminated?.role === "jester") {
+      this.finish("jester", this.t("win.jester"), "win-jester"); // the Jester wanted exactly this
+      return;
+    }
     this.checkWin();
   }
 
@@ -669,7 +738,7 @@ export class Game {
 
   // ---------- end ----------
   private checkWin() {
-    const mafia = this.alive("mafia").length;
+    const mafia = this.aliveMafia().length;
     const town = this.alive().length - mafia;
     if (mafia === 0) this.finish("town", this.t("win.town"), "win-town");
     else if (mafia >= town) this.finish("mafia", this.t("win.mafia"), "win-mafia");
@@ -692,6 +761,9 @@ export class Game {
     this.defendants = [];
     this.defenseIdx = 0;
     this.voteStage = "final";
+    this.vigilanteUsed = false;
+    this.vigilantePick = null;
+    this.lastNightDeathIds = [];
     for (const p of this.players) {
       p.role = null;
       p.alive = true;
@@ -708,7 +780,7 @@ export class Game {
     const over = this.phase === "over";
     const seeAll = over || (me && !me.alive && this.settings.deadSeeRoles);
     const showRole = (p: Player) =>
-      seeAll || (p.id === me?.id) || (me?.role === "mafia" && p.role === "mafia") ||
+      seeAll || (p.id === me?.id) || (isMafiaRole(me?.role) && isMafiaRole(p.role)) ||
       (!p.alive && this.settings.revealRoleOnDeath);
     const counts = this.phase === "vote" || this.phase === "defense" || this.phase === "result" ? this.tally() : {};
     const step = this.step;
@@ -719,7 +791,7 @@ export class Game {
       hostId: this.hostId,
       winner: this.winner,
       lines: this.lines.slice(-12),
-      talk: this.talk.slice(-14),
+      talk: this.talk.filter((t) => !t.ghost || (me && !me.alive) || this.phase === "over").slice(-14),
       joinStatus: me ? null : playerId ? (this.blocked.includes(playerId) ? "blocked" : this.pending.some((p) => p.id === playerId) ? "pending" : this.declined.includes(playerId) ? "declined" : null) : null,
       pending: playerId && playerId === this.hostId ? this.pending : [],
       players: this.players.map((p) => ({
@@ -739,23 +811,26 @@ export class Game {
             alive: me.alive,
             isHost: me.id === this.hostId,
             notes: this.notes[me.id] ?? [],
+            bulletUsed: me.role === "vigilante" ? this.vigilanteUsed : false,
           }
         : null,
       night: {
         step: this.phase === "night" ? step : null,
         yourTargets: me ? this.canTarget(me.id) : [],
         yourPick:
-          me?.role === "mafia" ? (this.mafiaPicks[me.id] ?? null)
+          isMafiaRole(me?.role) ? (this.mafiaPicks[me!.id] ?? null)
           : me?.role === "doctor" ? this.doctorPick
           : me?.role === "detective" ? this.detectivePick
+          : me?.role === "vigilante" ? this.vigilantePick
           : null,
-        mafiaPicks: me?.role === "mafia" && this.step === "mafia" ? this.mafiaPicks : {},
+        mafiaPicks: isMafiaRole(me?.role) && this.step === "mafia" ? this.mafiaPicks : {},
       },
       vote: {
         counts,
         yourVote: me ? (this.votes[me.id] ?? null) : null,
         stage: this.voteStage,
         voted: this.phase === "vote" ? Object.keys(this.votes).length : 0,
+        byWho: me && !me.alive && this.phase === "vote" ? this.votes : {},
         eligible: this.alive().length,
       },
       result: this.lastResult,

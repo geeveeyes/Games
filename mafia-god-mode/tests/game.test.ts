@@ -37,10 +37,10 @@ function runNight(g: Game, kill?: string, save?: string, check?: string) {
 describe("role counts", () => {
   it("matches the plan table", () => {
     const o = { useDoctor: true, useDetective: true, mafiaCount: null };
-    expect(roleCounts(6, o)).toEqual({ mafia: 2, doctor: 1, detective: 1, villager: 2 });
-    expect(roleCounts(8, o)).toEqual({ mafia: 2, doctor: 1, detective: 1, villager: 4 });
-    expect(roleCounts(10, o)).toEqual({ mafia: 3, doctor: 1, detective: 1, villager: 5 });
-    expect(roleCounts(13, o)).toEqual({ mafia: 4, doctor: 1, detective: 1, villager: 7 });
+    expect(roleCounts(6, o)).toMatchObject({ mafia: 2, doctor: 1, detective: 1, villager: 2 });
+    expect(roleCounts(8, o)).toMatchObject({ mafia: 2, doctor: 1, detective: 1, villager: 4 });
+    expect(roleCounts(10, o)).toMatchObject({ mafia: 3, doctor: 1, detective: 1, villager: 5 });
+    expect(roleCounts(13, o)).toMatchObject({ mafia: 4, doctor: 1, detective: 1, villager: 7 });
   });
   it("never lets mafia reach half", () => {
     expect(roleCounts(6, { useDoctor: true, useDetective: true, mafiaCount: 9 }).mafia).toBe(2);

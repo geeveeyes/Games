@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import type { Mode, Role, Settings, Visibility, VoteStyle } from "../shared/game";
+import { type Mode, type Role, type Settings, type Visibility, type VoteStyle, actsIn, isMafiaRole } from "../shared/game";
 import { DAY_SECONDS, DEFENSE_SECONDS, LANGS, MAFIA_COUNTS, MODE_IDS, VISIBILITY_IDS, VOTE_SECONDS, VOTE_STYLE_IDS } from "../shared/options";
 import type { ClientView, RoomSummary } from "../shared/room";
 import { call, callRooms, loadSession, playerToken, saveName, saveSession, savedName, useRoom, type Session } from "./api";
@@ -13,11 +13,14 @@ import { RulesModal } from "./Rules";
 type Act = (a: Record<string, unknown>) => Promise<boolean>;
 type Player = ClientView["players"][number];
 
-const ROLE_INFO: Record<Role, { title: string; tip: string; team: "Mafia" | "Town" }> = {
+const ROLE_INFO: Record<Role, { title: string; tip: string; team: "Mafia" | "Town" | "Neutral" }> = {
   mafia: { title: "Mafia", tip: "Each night, agree with your partners on one person to eliminate. By day, blend in.", team: "Mafia" },
   doctor: { title: "Doctor", tip: "Each night, pick one person to protect. You may protect yourself.", team: "Town" },
   detective: { title: "Detective", tip: "Each night, learn whether one person is Mafia. Use it wisely.", team: "Town" },
   villager: { title: "Villager", tip: "No night power. Talk, reason, and vote out the Mafia.", team: "Town" },
+  godfather: { title: "Godfather", tip: "You lead the Mafia. The Detective sees you as innocent. Pick a victim with your partners.", team: "Mafia" },
+  jester: { title: "Jester", tip: "You win alone if the village votes you out. Be suspicious, but not too obviously.", team: "Neutral" },
+  vigilante: { title: "Vigilante", tip: "You have one bullet for the whole game. Shoot at night, or hold your fire. Be sure.", team: "Town" },
 };
 
 export function App() {
@@ -344,9 +347,12 @@ function RoleCard({ role, partners }: { role: Role; partners: string[] }) {
   );
 }
 
+/** Eliminated players may post in the ghost channel at any point after the game starts. */
+const ghostCanTalk = (v: ClientView) => !!v.you && !v.you.alive && v.phase !== "lobby" && v.phase !== "reveal";
+
 function TalkBox({ v, act }: { v: ClientView; act: Act }) {
   const [text, setText] = useState("");
-  const alive = !!v.you?.alive;
+  const alive = !!v.you?.alive || ghostCanTalk(v);
   const send = async (e: React.FormEvent) => {
     e.preventDefault();
     const t = text.trim();
@@ -354,15 +360,16 @@ function TalkBox({ v, act }: { v: ClientView; act: Act }) {
     setText("");
     await act({ action: "say", text: t });
   };
-  if (!v.talk.length && !alive) return null;
+  const ghost = !!v.you && !v.you.alive && v.phase !== "over";
   return (
-    <section className="stack talk" aria-label="Table talk">
-      <h3>Table talk</h3>
+    <section className="stack talk" aria-label={ghost ? "Ghost chat" : "Table talk"}>
+      <h3>{ghost ? "Ghost chat" : "Table talk"}</h3>
+      {ghost && <p className="muted small">Only eliminated players see what is said here. You can still read the table talk.</p>}
       {v.talk.length === 0 && <p className="muted small">Nobody has spoken yet.</p>}
       <ul className="talklist">
         {v.talk.map((t) => (
           <li key={t.seq} className={t.id === v.you?.id ? "mine" : ""}>
-            <b>{t.name}</b>{t.bot && <span className="rtag bot">bot</span>} {t.text}
+            <b>{t.name}</b>{t.bot && <span className="rtag bot">bot</span>}{t.ghost && <span className="rtag">ghost</span>} {t.text}
           </li>
         ))}
       </ul>
@@ -404,7 +411,7 @@ function PlayerScreen({ v, act, now, onLeave, onFeedback }: { v: ClientView; act
   const alive = v.players.filter((p) => p.alive);
   const others = alive.filter((p) => p.id !== me.id);
   const spectator = !me.alive && v.phase !== "lobby" && v.phase !== "over";
-  const partners = me.role === "mafia" ? v.players.filter((p) => p.role === "mafia" && p.id !== me.id).map((p) => p.name) : [];
+  const partners = isMafiaRole(me.role) ? v.players.filter((p) => isMafiaRole(p.role) && p.id !== me.id).map((p) => p.name) : [];
 
   const banner = spectator ? <p className="banner">You are out of the game. You can keep watching.</p> : null;
 
@@ -431,16 +438,16 @@ function PlayerScreen({ v, act, now, onLeave, onFeedback }: { v: ClientView; act
 
     case "night": {
       const step = v.night.step;
-      const isMyTurn = me.alive && me.role === step;
+      const isMyTurn = me.alive && actsIn(me.role, step) && v.night.yourTargets.length > 0;
       const classic = v.settings.mode !== "remote";
       if (isMyTurn && step) {
         const allowed = new Set(v.night.yourTargets);
-        const list = step === "mafia" ? others.filter((p) => p.role !== "mafia") : step === "doctor" ? alive : others;
+        const list = step === "mafia" ? others.filter((p) => !isMafiaRole(p.role)) : step === "doctor" ? alive : others;
         const lastNote = me.notes.at(-1);
         const targetName = (id: string) => v.players.find((p) => p.id === id)?.name ?? "?";
         const badges: Record<string, string> = {};
         for (const [mid, t] of Object.entries(v.night.mafiaPicks)) if (mid !== me.id) badges[t] = `${targetName(mid)} picked`;
-        const title = { mafia: "Choose who to eliminate", doctor: "Choose who to save", detective: "Choose who to investigate" }[step];
+        const title = { mafia: "Choose who to eliminate", doctor: "Choose who to save", detective: "Choose who to investigate", vigilante: "Shoot someone, or hold your fire" }[step];
         return (
           <div className="stack gap-lg night">
             <Narration v={v} />
@@ -455,8 +462,12 @@ function PlayerScreen({ v, act, now, onLeave, onFeedback }: { v: ClientView; act
             ) : (
               <>
                 {step === "mafia" && partners.length > 0 && <p className="muted">Partner{partners.length > 1 ? "s" : ""}: {partners.join(", ")}. Everyone must pick the same person.</p>}
-                <Pick players={list} allowed={allowed} selected={v.night.yourPick} onPick={(id) => act({ action: "night", target: id })} badges={badges} />
-                {v.night.yourPick && <p className="muted center">Locked in{step === "mafia" ? ". Waiting for your partners to match." : ". Waiting for the night to continue."}</p>}
+                {step === "vigilante" && <p className="muted">You have one bullet for the whole game. Once it is spent, it is gone.</p>}
+                <Pick players={list} allowed={allowed} selected={v.night.yourPick === "skip" ? null : v.night.yourPick} onPick={(id) => act({ action: "night", target: id })} badges={badges} />
+                {step === "vigilante" && (
+                  <button className={`btn ${v.night.yourPick === "skip" ? "" : "ghost"}`} onClick={() => act({ action: "night", target: "skip" })}>Hold fire</button>
+                )}
+                {v.night.yourPick && <p className="muted center">{v.night.yourPick === "skip" ? "You are holding fire. " : "Locked in. "}{step === "mafia" ? "Waiting for your partners to match." : "Waiting for the night to continue."}</p>}
               </>
             )}
           </div>
@@ -468,6 +479,7 @@ function PlayerScreen({ v, act, now, onLeave, onFeedback }: { v: ClientView; act
           <div className="moon" aria-hidden />
           <h2>{classic ? "Keep your eyes closed" : "Night"}</h2>
           <p className="muted">{me.alive ? (classic ? "Do not peek. The narrator will tell you when it is morning." : "Night roles are acting. Wait for morning.") : "You are out of the game."}</p>
+          {!me.alive && <div className="stack left"><TalkBox v={v} act={act} /></div>}
         </div>
       );
     }
@@ -480,6 +492,7 @@ function PlayerScreen({ v, act, now, onLeave, onFeedback }: { v: ClientView; act
           <div className={v.phase === "dawn" ? "sun" : "gavel"} aria-hidden />
           <Narration v={v} />
           <Timer due={v.due} now={now} label="Next" />
+          {spectator && <div className="stack left"><TalkBox v={v} act={act} /></div>}
           <HostSkip v={v} act={act} label="Continue" />
         </div>
       );
@@ -534,6 +547,13 @@ function PlayerScreen({ v, act, now, onLeave, onFeedback }: { v: ClientView; act
             </button>
           )}
           <p className="muted center">{v.vote.voted} of {v.vote.eligible} have voted</p>
+          {!me.alive && Object.keys(v.vote.byWho).length > 0 && (
+            <div className="stack left"><h3>Votes so far</h3>
+              <ul className="talklist">{Object.entries(v.vote.byWho).map(([from, to]) => (
+                <li key={from}><b>{v.players.find((p) => p.id === from)?.name}</b> → {to === "skip" ? "skip" : v.players.find((p) => p.id === to)?.name}</li>
+              ))}</ul>
+            </div>
+          )}
           <TalkBox v={v} act={act} />
           <HostSkip v={v} act={act} label="Close the vote now" />
         </div>
@@ -543,9 +563,9 @@ function PlayerScreen({ v, act, now, onLeave, onFeedback }: { v: ClientView; act
     case "over":
       return (
         <div className="stack gap-lg">
-          <div className={`card revealed ${v.winner === "town" ? "detective" : "mafia"}`}>
+          <div className={`card revealed ${v.winner === "town" ? "detective" : v.winner === "jester" ? "jester" : "mafia"}`}>
             <span className="tag">Winners</span>
-            <span className="big">{v.winner === "town" ? "Town" : "Mafia"}</span>
+            <span className="big">{v.winner === "town" ? "Town" : v.winner === "jester" ? "Jester" : "Mafia"}</span>
             <span className="tag">{v.lines.at(-1)?.text}</span>
           </div>
           <Roster players={v.players} showRoles />
@@ -685,7 +705,9 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
         </div>
         <div className="mix">
           <span>With {Math.max(n, v.minPlayers)} players:</span>
-          <b>{sg.mafia} Mafia</b><b>{sg.doctor} Doctor</b><b>{sg.detective} Detective</b><b>{sg.villager} Villager{sg.villager === 1 ? "" : "s"}</b>
+          {([["Mafia", sg.mafia], ["Godfather", sg.godfather], ["Doctor", sg.doctor], ["Detective", sg.detective], ["Vigilante", sg.vigilante], ["Jester", sg.jester], ["Villager", sg.villager]] as [string, number][])
+            .filter(([, k]) => k > 0)
+            .map(([name, k]) => <b key={name}>{k} {name}{name === "Villager" && k !== 1 ? "s" : ""}</b>)}
         </div>
         <div className="stack">
           {VOTE_STYLE_IDS.map((id) => ({ id, ...VOTE_TEXT[id] })).map(({ id, title, text }) => (
@@ -695,8 +717,13 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
             </label>
           ))}
         </div>
-        {toggle("useDoctor", "Include the Doctor")}
-        {toggle("useDetective", "Include the Detective")}
+        <h3>Roles in this game</h3>
+        {toggle("useDoctor", "Doctor", "Saves one person each night")}
+        {toggle("useDetective", "Detective", "Learns if someone is Mafia")}
+        {toggle("useGodfather", "Godfather", "A Mafia boss who looks innocent to the Detective (needs 2 or more Mafia)")}
+        {toggle("useVigilante", "Vigilante", "A town member with one bullet for the whole game (8 or more players works best)")}
+        {toggle("useJester", "Jester", "Wins alone if the village votes them out (8 or more players works best)")}
+        <h3>Rules</h3>
         {toggle("doctorSelfSave", "Doctor can save themselves")}
         {toggle("doctorRepeatSave", "Doctor can save the same person two nights in a row")}
         {toggle("revealRoleOnDeath", "Reveal a player's role when they die")}
@@ -764,7 +791,7 @@ function Display({ v, now, narratorOn, enable }: { v: ClientView; now: () => num
             {v.talk.slice(-4).map((t) => <li key={t.seq}><b>{t.name}</b> {t.text}</li>)}
           </ul>
         )}
-        {v.phase === "over" && <p className="tv-say win">{v.winner === "town" ? "Town wins" : "Mafia wins"}</p>}
+        {v.phase === "over" && <p className="tv-say win">{v.winner === "town" ? "Town wins" : v.winner === "jester" ? "Jester wins" : "Mafia wins"}</p>}
         {!narratorOn && <button className="btn" onClick={enable}>Turn on the narrator and music</button>}
       </div>
       <div className="seats">

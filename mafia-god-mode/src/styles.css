@@ -167,3 +167,8 @@ textarea { font: 1rem var(--body); padding: 12px; border-radius: 8px; border: 1p
 .invitecard b { font-family: var(--display); text-transform: uppercase; letter-spacing: .05em; font-size: 1.4rem; }
 .tvjoin { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
 .tvjoin .qr { margin: 0; }
+
+.card.revealed.godfather { background: linear-gradient(160deg, #3a1220, #1d0b14); border-color: #8a3a52; color: #f2b8c4; }
+.card.revealed.vigilante { background: linear-gradient(160deg, #2e2a12, #17150a); border-color: #6b6224; color: #f0e2a0; }
+.card.revealed.jester { background: linear-gradient(160deg, #2a1a40, #130c20); border-color: #6a4aa0; color: #d8c4f5; }
+.stack.left { text-align: left; align-items: stretch; }

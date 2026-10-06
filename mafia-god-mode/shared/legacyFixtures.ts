@@ -5,8 +5,10 @@ export const V1_SETTINGS = {
 };
 export const V2_SETTINGS = { ...V1_SETTINGS, voteStyle: "trial", defenseSec: 30 };
 export const V3_SETTINGS = { ...V2_SETTINGS, visibility: "private", roomName: "Old room" };
+export const V4_SETTINGS = { ...V3_SETTINGS, language: "en" }; // before Godfather, Jester and Vigilante
 
-export const NEWER_TOP_LEVEL = ["talk", "talkSeq", "pending", "declined", "blocked", "voteStage", "defendants", "defenseIdx"];
+export const NEWER_TOP_LEVEL = ["talk", "talkSeq", "pending", "declined", "blocked", "voteStage", "defendants", "defenseIdx", "vigilantePick", "vigilanteUsed", "lastNightDeathIds"];
+export const NEWER_SETTINGS = ["voteStyle", "defenseSec", "visibility", "roomName", "language", "useGodfather", "useJester", "useVigilante"];
 
 /** A lobby exactly as an older deploy stored it: only the fields that existed then. */
 export function oldLobby(settings: Record<string, unknown>, withNewerFields: boolean) {

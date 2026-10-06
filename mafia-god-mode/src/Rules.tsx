@@ -38,6 +38,12 @@ export function RulesModal({ onClose }: { onClose: () => void }) {
               <li><b>Detective.</b> Each night learns whether one person is Mafia. Use it without giving yourself away.</li>
               <li><b>Villager.</b> No power. Talk, watch, and vote.</li>
             </ul>
+            <p className="muted small">The host can also switch on these optional roles:</p>
+            <ul className="rules-list">
+              <li><b>Godfather.</b> Leads the Mafia and wakes with them, but the Detective sees the Godfather as innocent. The Town must remove the Godfather too.</li>
+              <li><b>Jester.</b> Wants to be voted out. If the village votes the Jester out by day, the Jester wins alone and the game ends. Being killed at night does not count.</li>
+              <li><b>Vigilante.</b> A town member with one bullet for the whole game. Each night they may shoot someone or hold fire. If the Doctor saves the target, nobody dies. Shooting a friend is on them.</li>
+            </ul>
           </section>
 
           <section className="stack">
@@ -72,7 +78,7 @@ export function RulesModal({ onClose }: { onClose: () => void }) {
 
           <section className="stack">
             <h3>When you are out</h3>
-            <p>You can still watch, but you must stay silent and not hint at what you know. Roles stay hidden until the game ends, unless the host turned on reveals.</p>
+            <p>You can still watch. Eliminated players have a <b>ghost chat</b> that only they can see, so you can talk about the game without spoiling it for the living, and you also see who voted for whom. Do not give hints to the living in any other way. Roles stay hidden until the game ends, unless the host turned on reveals.</p>
           </section>
 
           <section className="stack">

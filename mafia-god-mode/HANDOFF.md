@@ -26,6 +26,10 @@ Script lives in `shared/game.ts` (`narrate(text, cue)`; `|` = short pause, `||` 
 
 `shared/feedback.ts` (validation, rate limit, CSV), `functions/feedback.ts` (route), `src/Feedback.tsx` (form), `src/Admin.tsx` (`/#admin`). Redis list `mgm:feedback`; `docs/feedback.sql` is the SQL target. Needs `FEEDBACK_ADMIN_KEY` in Vercel to read entries. Browser test: `e2e/feedback.mjs`. `npm run build:api` bundles both `api/room.js` and `api/feedback.js`.
 
+## Roles
+
+`Role` now includes godfather, jester, vigilante. Use `isMafiaRole(role)` (Mafia team) and `actsIn(role, step)` instead of comparing to `"mafia"`. The Detective checks `role === "mafia"`, so the Godfather reads as innocent on purpose. Vigilante has a night step (`vigilantePick`, `"skip"` = hold fire, `vigilanteUsed`). Jester wins via `resolveVote` (`winner: "jester"`). Ghost chat is `Talk.ghost`, filtered in `viewFor`. Adding a role means: `Role`, `roleCounts`, deck in `start`, script role words in `shared/script.ts` (all languages), bot behaviour, `ROLE_INFO` and a card colour in the UI, a compat fixture, and a case in `tests/roles.test.ts`. `tests/simulation.test.ts` plays 45 full games with every role and language.
+
 ## Narration script and clips
 
 `shared/script.ts` holds every narrated line in English/Hindi/Tamil (`say`, `spokenTime`, `segmentsOf`). `shared/clips.ts` names recordable segments; `scripts/generate-narration.ts` records them; `src/narrator.ts` plays clip-or-TTS per segment and picks a voice per language. Hindi/Tamil need native review. Details in `docs/NARRATION.md`. Remember to restart the dev API after engine changes before running browser tests.
