@@ -37,6 +37,8 @@ export interface Settings {
   useGodfather: boolean; // a Mafia member who looks innocent to the Detective
   useJester: boolean; // wins alone if voted out by day
   useVigilante: boolean; // town member with one night shot per game
+  detectiveCount: number; // 1 or 2 detectives (each investigates on their own)
+  finalVoteScope: "accused" | "anyone"; // trial style: who the final vote may name
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -58,6 +60,8 @@ export const DEFAULT_SETTINGS: Settings = {
   useGodfather: false,
   useJester: false,
   useVigilante: false,
+  detectiveCount: 1,
+  finalVoteScope: "accused",
 };
 
 const clampN = (n: number, lo: number, hi: number, fallback: number) => (Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n))) : fallback);
@@ -90,6 +94,8 @@ export function normalizeSettings(input: Partial<Record<keyof Settings, unknown>
     useGodfather: bool(raw.useGodfather, d.useGodfather),
     useJester: bool(raw.useJester, d.useJester),
     useVigilante: bool(raw.useVigilante, d.useVigilante),
+    detectiveCount: clampN(Number(raw.detectiveCount ?? d.detectiveCount), 1, 2, d.detectiveCount),
+    finalVoteScope: oneOf(raw.finalVoteScope, ["accused", "anyone"], d.finalVoteScope),
   };
 }
 
@@ -179,7 +185,7 @@ export type Rng = () => number;
  * Suggested role mix for a player count. Optional roles only appear when enough ordinary villagers remain,
  * so the game never turns into all special roles.
  */
-export function roleCounts(n: number, s: Pick<Settings, "useDoctor" | "useDetective" | "mafiaCount"> & Partial<Pick<Settings, "useGodfather" | "useJester" | "useVigilante">>) {
+export function roleCounts(n: number, s: Pick<Settings, "useDoctor" | "useDetective" | "mafiaCount"> & Partial<Pick<Settings, "useGodfather" | "useJester" | "useVigilante" | "detectiveCount">>) {
   const maxMafia = Math.max(1, Math.ceil(n / 2) - 1);
   const auto = Math.max(1, Math.floor(n / 3));
   const mafiaTotal = Math.min(maxMafia, Math.max(1, s.mafiaCount ?? auto));
@@ -188,7 +194,8 @@ export function roleCounts(n: number, s: Pick<Settings, "useDoctor" | "useDetect
   let rest = n - mafiaTotal;
   const doctor = s.useDoctor && rest >= 2 ? 1 : 0;
   rest -= doctor;
-  const detective = s.useDetective && rest >= 1 ? 1 : 0;
+  // A second Detective only when at least two ordinary villagers would remain.
+  const detective = !s.useDetective ? 0 : (s.detectiveCount ?? 1) >= 2 && rest >= 4 ? 2 : rest >= 1 ? 1 : 0;
   rest -= detective;
   const vigilante = s.useVigilante && rest >= 3 ? 1 : 0;
   rest -= vigilante;
@@ -226,7 +233,7 @@ export class Game {
   stepIdx = 0;
   mafiaPicks: Record<string, string> = {};
   doctorPick: string | null = null;
-  detectivePick: string | null = null;
+  detectivePicks: Record<string, string> = {}; // each Detective investigates on their own
   vigilantePick: string | null = null; // a player id, or "skip" for holding fire
   vigilanteUsed = false;
   lastNightDeathIds: string[] = [];
@@ -242,6 +249,7 @@ export class Game {
   defendants: string[] = [];
   defenseIdx = 0;
   lastResult: { text: string; eliminatedId: string | null } | null = null;
+  lastVoteReveal: { stage: VoteStage; votes: Record<string, string> } | null = null; // who voted for whom, shown to everyone after each vote
   lastNightDeathId: string | null = null;
 
   seq = 0;
@@ -421,7 +429,7 @@ export class Game {
     this.mafiaPicks = Object.fromEntries(Object.entries(this.mafiaPicks).map(([k, v]) => [swap(k), swap(v)]));
     this.votes = Object.fromEntries(Object.entries(this.votes).map(([k, v]) => [swap(k), swap(v)]));
     this.doctorPick = this.doctorPick ? swap(this.doctorPick) : null;
-    this.detectivePick = this.detectivePick ? swap(this.detectivePick) : null;
+    this.detectivePicks = Object.fromEntries(Object.entries(this.detectivePicks).map(([k, v]) => [swap(k), swap(v)]));
     this.lastSaved = this.lastSaved ? swap(this.lastSaved) : null;
     this.lastNightDeathId = this.lastNightDeathId ? swap(this.lastNightDeathId) : null;
     this.defendants = this.defendants.map(swap);
@@ -449,6 +457,7 @@ export class Game {
     if (bad(patch.voteStyle, ["trial", "quick"])) return fail("Unknown voting style.");
     if (bad(patch.visibility, ["open", "ask", "private"])) return fail("Unknown room visibility.");
     if (bad(patch.language, LANG_IDS)) return fail("Unknown narrator language.");
+    if (bad(patch.finalVoteScope, ["accused", "anyone"])) return fail("Unknown final vote setting.");
     this.settings = normalizeSettings({ ...this.settings, ...patch });
     return ok();
   }
@@ -512,11 +521,12 @@ export class Game {
     this.stepIdx = 0;
     this.mafiaPicks = {};
     this.doctorPick = null;
-    this.detectivePick = null;
+    this.detectivePicks = {};
     this.vigilantePick = null;
     this.votes = {};
     this.talk = [];
     this.lastResult = null;
+    this.lastVoteReveal = null;
     this.narrate(this.t(this.classic() ? "night.classic" : "night.remote"), "night");
     this.announceStep(null);
   }
@@ -568,8 +578,8 @@ export class Game {
     if (step === "mafia") this.mafiaPicks[playerId] = targetId;
     if (step === "doctor") this.doctorPick = targetId;
     if (step === "detective") {
-      if (this.detectivePick) return fail("You already investigated tonight.");
-      this.detectivePick = targetId;
+      if (this.detectivePicks[playerId]) return fail("You already investigated tonight.");
+      this.detectivePicks[playerId] = targetId;
       const target = this.player(targetId)!;
       // The Godfather is a different role from "mafia", so the Detective sees him as innocent.
       (this.notes[playerId] ??= []).push({ night: this.round, targetId, isMafia: target.role === "mafia" });
@@ -594,7 +604,7 @@ export class Game {
     }
     if (step === "doctor") return this.doctorPick !== null;
     if (step === "vigilante") return this.vigilantePick !== null;
-    return this.detectivePick !== null;
+    return this.actors().every((d) => !!this.detectivePicks[d.id]);
   }
 
   /** Move to the next night step, or resolve the night. `force` settles missing picks. */
@@ -683,7 +693,7 @@ export class Game {
       const t = this.player(targetId);
       if (!t?.alive) return fail("Pick a living player.");
       if (t.id === me.id) return fail("You cannot vote for yourself.");
-      if (this.voteStage === "final" && this.defendants.length && !this.defendants.includes(t.id)) {
+      if (this.voteStage === "final" && this.defendants.length && this.settings.finalVoteScope === "accused" && !this.defendants.includes(t.id)) {
         return fail("Vote for one of the accused, or skip.");
       }
     }
@@ -710,6 +720,7 @@ export class Game {
   resolveVote() {
     if (this.phase !== "vote") return;
     this.log({ round: this.round, kind: "vote", stage: this.voteStage, votes: { ...this.votes } });
+    this.lastVoteReveal = { stage: this.voteStage, votes: { ...this.votes } };
     if (this.voteStage === "poll") return this.resolvePoll();
     const counts = this.tally();
     const entries = Object.entries(counts);
@@ -930,7 +941,7 @@ export class Game {
         yourPick:
           isMafiaRole(me?.role) ? (this.mafiaPicks[me!.id] ?? null)
           : me?.role === "doctor" ? this.doctorPick
-          : me?.role === "detective" ? this.detectivePick
+          : me?.role === "detective" ? (this.detectivePicks[me.id] ?? null)
           : me?.role === "vigilante" ? this.vigilantePick
           : null,
         mafiaPicks: isMafiaRole(me?.role) && this.step === "mafia" ? this.mafiaPicks : {},
@@ -941,6 +952,7 @@ export class Game {
         stage: this.voteStage,
         voted: this.phase === "vote" ? Object.keys(this.votes).length : 0,
         byWho: me && !me.alive && this.phase === "vote" ? this.votes : {},
+        reveal: this.lastVoteReveal,
         eligible: this.alive().length,
       },
       result: this.lastResult,

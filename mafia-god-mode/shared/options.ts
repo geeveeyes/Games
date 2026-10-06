@@ -11,3 +11,5 @@ export const DAY_SECONDS = [60, 120, 180, 300, 600];
 export const VOTE_SECONDS = [30, 60, 90, 120];
 export const DEFENSE_SECONDS = [20, 30, 45, 60];
 export const TOGGLE_KEYS = ["useDoctor", "useDetective", "useGodfather", "useJester", "useVigilante", "doctorSelfSave", "doctorRepeatSave", "revealRoleOnDeath", "deadSeeRoles"] as const;
+export const DETECTIVE_COUNTS = [1, 2];
+export const FINAL_VOTE_SCOPES = ["accused", "anyone"] as const;

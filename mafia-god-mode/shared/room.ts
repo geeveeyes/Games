@@ -2,6 +2,7 @@
 // poll or action calls `tick`, which applies whatever transition is due.
 import { type BotMem, noteMentions, runBots } from "./bots";
 import { Game, type GameView, type Result } from "./game";
+import { estimateSpeechMs } from "./script";
 
 export interface Timing {
   revealMs: number;
@@ -20,6 +21,8 @@ export interface Timing {
   botTalkMinMs: number; botTalkMaxMs: number;
   botDefendMinMs: number; botDefendMaxMs: number;
   botReplyMinMs: number; botReplyMaxMs: number;
+  /** Hold the game back until the narration for the current moment has had time to be spoken. */
+  speechPacing: boolean;
 }
 
 export const DEFAULT_TIMING: Timing = {
@@ -39,6 +42,7 @@ export const DEFAULT_TIMING: Timing = {
   botTalkMinMs: 5000, botTalkMaxMs: 110_000,
   botDefendMinMs: 4000, botDefendMaxMs: 9000,
   botReplyMinMs: 2500, botReplyMaxMs: 7000,
+  speechPacing: true,
 };
 
 export const INSTANT_TIMING: Timing = Object.fromEntries(
@@ -55,6 +59,8 @@ export interface RoomData {
   botNext?: number | null; // earliest time a bot wants to act
   listed?: boolean; // currently in the open-rooms directory
   recordedGame?: number; // the last game number saved to the anonymous stats
+  speechEnd?: number; // when the narration written so far should finish being spoken
+  speechSeq?: number; // the newest narration line already counted in speechEnd
   updatedAt: number;
 }
 
@@ -113,13 +119,34 @@ function delayFor(g: Game, t: Timing, rng: () => number): number | null {
   }
 }
 
+/** Add the narration written since last time to the running estimate of when the narrator will be done talking. */
+function trackSpeech(room: RoomData, g: Game, now: number, t: Timing) {
+  if (!t.speechPacing) return;
+  const seen = room.speechSeq ?? 0;
+  for (const line of g.lines) {
+    if (line.seq <= seen) continue;
+    room.speechEnd = Math.max(room.speechEnd ?? 0, now) + estimateSpeechMs(line.text, line.lang ?? "en");
+    room.speechSeq = line.seq;
+  }
+  // a new game starts line numbers again
+  if (g.lines.length && g.lines[g.lines.length - 1].seq < seen) room.speechSeq = g.lines[g.lines.length - 1].seq;
+}
+
 /** Recompute the deadline whenever the game moved to a new waiting state. */
 export function schedule(room: RoomData, g: Game, now: number, t: Timing, rng: () => number = Math.random) {
+  trackSpeech(room, g, now, t);
   const key = keyOf(g);
   if (key === room.key) return;
   room.key = key;
   const d = delayFor(g, t, rng);
-  room.due = d === null ? null : now + d;
+  if (d === null) {
+    room.due = null;
+    return;
+  }
+  let due = now + d;
+  // Never move the night, dawn or a result along while the narrator is still talking about the moment before.
+  if (t.speechPacing && room.speechEnd && ["reveal", "night", "dawn", "result"].includes(g.phase)) due = Math.max(due, room.speechEnd);
+  room.due = due;
 }
 
 function fire(g: Game) {

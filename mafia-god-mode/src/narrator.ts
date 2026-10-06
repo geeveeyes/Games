@@ -146,23 +146,42 @@ export function useNarrator(view: ClientView | null) {
   }, [on, language]);
 
   /** Speak lines one after another, with their music and sound cues. A newer call replaces an older one. */
-  const playLines = useCallback((lines: ClientView["lines"], opts: { stings?: boolean } = {}) => {
-    const stings = opts.stings ?? true;
+  // Lines wait in a queue and are spoken one at a time, each to the end. A new line never cuts the one being spoken.
+  const queue = useRef<{ line: ClientView["lines"][number]; stings: boolean }[]>([]);
+  const speaking = useRef(false);
+  const MAX_BACKLOG = 4; // if the device falls far behind (a sleeping phone), skip the oldest lines and catch up
+
+  const drain = useCallback(() => {
+    if (speaking.current) return;
+    const item = queue.current.shift();
+    if (!item) return;
+    speaking.current = true;
+    const myRun = run.current;
+    const { line, stings } = item;
     const a = amb();
-    const myRun = ++run.current;
-    stopSpeech();
-    let idx = 0;
-    const playNext = () => {
-      if (run.current !== myRun || idx >= lines.length) return;
-      const line = lines[idx++];
-      const mood = line.cue ? MOOD[line.cue] : undefined;
-      if (mood) a.setMood(mood);
-      const sting = line.cue ? STING[line.cue] : undefined;
-      if (sting && stings) a.sting(sting);
-      speak(line.text, line.lang ?? "en", myRun, () => setTimeout(playNext, 400));
-    };
-    playNext();
-  }, [speak, stopSpeech]);
+    const mood = line.cue ? MOOD[line.cue] : undefined;
+    if (mood) a.setMood(mood);
+    const sting = line.cue ? STING[line.cue] : undefined;
+    if (sting && stings) a.sting(sting);
+    speak(line.text, line.lang ?? "en", myRun, () => {
+      if (run.current !== myRun) return;
+      speaking.current = false;
+      setTimeout(drain, 400);
+    });
+  }, [speak]);
+
+  /** Add lines to the queue. With `fromNow`, drop anything still waiting and start with these (used when the narrator is switched on). */
+  const playLines = useCallback((lines: ClientView["lines"], opts: { stings?: boolean; fromNow?: boolean } = {}) => {
+    if (opts.fromNow) {
+      run.current++;
+      stopSpeech();
+      queue.current = [];
+      speaking.current = false;
+    }
+    for (const line of lines) queue.current.push({ line, stings: opts.stings ?? true });
+    if (queue.current.length > MAX_BACKLOG) queue.current.splice(0, queue.current.length - MAX_BACKLOG);
+    drain();
+  }, [drain, stopSpeech]);
 
   // React to new narration lines. Every new line is played in order, so a slow refresh never swallows the middle of a night.
   useEffect(() => {
@@ -183,6 +202,8 @@ export function useNarrator(view: ClientView | null) {
     if (view !== null) return;
     run.current++;
     stopSpeech();
+    queue.current = [];
+    speaking.current = false;
     ambience.current?.duck(false);
     ambience.current?.stop();
     setOn(false);
@@ -214,7 +235,7 @@ export function useNarrator(view: ClientView | null) {
     unlockAudioElements(); // inside the tap, so later clips are allowed to play
     void preloadClips(v?.settings.language ?? "en");
     setOn(true);
-    if (current) playLines([current], { stings: false });
+    if (current) playLines([current], { stings: false, fromNow: true });
     await amb().start();
     amb().setVolume(MUSIC_VOL);
     if (v) amb().setMood(moodFor(v));
@@ -223,6 +244,8 @@ export function useNarrator(view: ClientView | null) {
   const disable = useCallback(() => {
     run.current++;
     stopSpeech();
+    queue.current = [];
+    speaking.current = false;
     ambience.current?.stop();
     setOn(false);
   }, [stopSpeech]);

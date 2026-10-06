@@ -2,13 +2,15 @@
 import { describe, expect, it } from "vitest";
 import { Game } from "../shared/game";
 import { handle } from "../shared/handler";
-import { DAY_SECONDS, DEFENSE_SECONDS, LANG_IDS, MAFIA_COUNTS, MODE_IDS, TOGGLE_KEYS, VISIBILITY_IDS, VOTE_SECONDS, VOTE_STYLE_IDS } from "../shared/options";
+import { DAY_SECONDS, DEFENSE_SECONDS, DETECTIVE_COUNTS, FINAL_VOTE_SCOPES, LANG_IDS, MAFIA_COUNTS, MODE_IDS, TOGGLE_KEYS, VISIBILITY_IDS, VOTE_SECONDS, VOTE_STYLE_IDS } from "../shared/options";
 import { INSTANT_TIMING } from "../shared/room";
 import { MemoryStore } from "../shared/store";
 
 const everyChoice: Record<string, unknown>[] = [
   ...MODE_IDS.map((mode) => ({ mode })),
   ...LANG_IDS.map((language) => ({ language })),
+  ...DETECTIVE_COUNTS.map((detectiveCount) => ({ detectiveCount })),
+  ...FINAL_VOTE_SCOPES.map((finalVoteScope) => ({ finalVoteScope })),
   ...VOTE_STYLE_IDS.map((voteStyle) => ({ voteStyle })),
   ...VISIBILITY_IDS.map((visibility) => ({ visibility })),
   ...MAFIA_COUNTS.map((mafiaCount) => ({ mafiaCount })),
@@ -49,6 +51,7 @@ describe("lobby settings", () => {
     expect(g.updateSettings({ mode: "telepathy" } as never).ok).toBe(false);
     expect(g.updateSettings({ visibility: "secret" } as never).ok).toBe(false);
     expect(g.updateSettings({ language: "klingon" } as never).ok).toBe(false);
+    expect(g.updateSettings({ finalVoteScope: "everyone-and-their-dog" } as never).ok).toBe(false);
     expect(g.settings.voteStyle).toBe("trial");
   });
 

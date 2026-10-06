@@ -73,7 +73,8 @@ describe("a whole game narrated in each language", () => {
         expect(t, t).not.toMatch(/undefined|NaN/);
       }
       expect(g.lines.every((l) => l.lang === lang)).toBe(true);
-      if (lang !== "en") expect(seen.join(" ")).toMatch(lang === "hi" ? /[ऀ-ॿ]/ : /[஀-௿]/);
+      const RANGE = { hi: /[\u0900-\u097F]/, ta: /[\u0B80-\u0BFF]/, te: /[\u0C00-\u0C7F]/ } as const;
+      if (lang !== "en") expect(seen.join(" ")).toMatch(RANGE[lang as "hi" | "ta" | "te"]);
     });
   }
 });

@@ -54,7 +54,7 @@ function tasks(room: RoomData, g: Game, t: Timing): { id: string; bot: Player; m
       const mine = g.actors();
       const humansMafia = isMafiaRole(b.role) ? mine.filter((m) => !m.bot) : [];
       const waitingOnHuman = humansMafia.length > 0 && humansMafia.every((m) => !g.mafiaPicks[m.id]);
-      const already = isMafiaRole(b.role) ? g.mafiaPicks[b.id] : b.role === "doctor" ? g.doctorPick : b.role === "vigilante" ? g.vigilantePick : g.detectivePick;
+      const already = isMafiaRole(b.role) ? g.mafiaPicks[b.id] : b.role === "doctor" ? g.doctorPick : b.role === "vigilante" ? g.vigilantePick : g.detectivePicks[b.id];
       if (!waitingOnHuman && !already) out.push({ id: `night:${b.id}`, bot: b, min: t.botNightMinMs, max: t.botNightMaxMs });
     }
     if (g.phase === "vote" && b.alive && !g.votes[b.id]) {

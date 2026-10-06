@@ -9,7 +9,7 @@ import { defaultStore } from "./shared/store";
 
 // MGM_FAST=1 shrinks every pause so a whole game runs in seconds (used by the browser test).
 const timing: Timing = process.env.MGM_FAST
-  ? (Object.fromEntries(Object.entries(DEFAULT_TIMING).map(([k, v]) => [k, Math.min(v, 400)])) as unknown as Timing)
+  ? ({ ...Object.fromEntries(Object.entries(DEFAULT_TIMING).map(([k, v]) => [k, typeof v === "number" ? Math.min(v, 400) : v])), speechPacing: process.env.MGM_PACE === "1" } as unknown as Timing)
   : DEFAULT_TIMING;
 
 // MGM_SEED_OLD_ROOM=1 preloads a lobby saved in the oldest format (room OLDX, host token "host"),
