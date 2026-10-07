@@ -36,6 +36,27 @@ export function bestVoice(voices: SpeechSynthesisVoice[], lang: Lang = "en"): Sp
   return [...pool].sort((a, b) => score(b) - score(a))[0];
 }
 
+/**
+ * Browsers load their voice list in the background: the first getVoices() call is often empty, and Chrome announces the
+ * real list later. Speaking before then falls back to the default voice (not the UK male). So wait for the list.
+ */
+export function loadVoices(timeoutMs = 600): Promise<SpeechSynthesisVoice[]> {
+  if (!speechSupported) return Promise.resolve([]);
+  const synth = window.speechSynthesis;
+  const now = synth.getVoices();
+  if (now.length) return Promise.resolve(now);
+  return new Promise((resolve) => {
+    const done = () => {
+      synth.removeEventListener("voiceschanged", done);
+      clearTimeout(timer);
+      resolve(synth.getVoices());
+    };
+    const timer = setTimeout(done, timeoutMs);
+    synth.addEventListener("voiceschanged", done);
+  });
+}
+if (speechSupported) void loadVoices(); // start loading as soon as the app opens
+
 export const parseScript = segmentsOf;
 export const plain = (text: string) => text.replace(/\s*\|\|?\s*/g, " ").replace(/\.\.\.\s*/g, "… ").replace(/\s+/g, " ").trim();
 
@@ -102,7 +123,7 @@ export function useNarrator(view: ClientView | null) {
   /** Speak one line: recorded clips where they exist, the device voice for the rest (names, anything not recorded). */
   const speak = useCallback((text: string, lang: Lang, myRun: number, onDone?: () => void) => {
     const segs = parseScript(text);
-    const voice = speechSupported ? bestVoice(window.speechSynthesis.getVoices(), lang) : undefined;
+    let voice: SpeechSynthesisVoice | undefined;
     const bcp47 = LANGS.find((l) => l.id === lang)?.bcp47 ?? "en-GB";
     let i = 0;
     const next = () => {
@@ -135,7 +156,12 @@ export function useNarrator(view: ClientView | null) {
       audio.onerror = tts; // a missing or broken file falls back to the device voice
       audio.play().catch(tts);
     };
-    next();
+    if (!speechSupported) return next();
+    void loadVoices().then((voices) => {
+      if (run.current !== myRun) return;
+      voice = bestVoice(voices, lang);
+      next();
+    });
   }, []);
 
   const viewRef = useRef(view);
