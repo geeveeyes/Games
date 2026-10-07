@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { type Mode, type Role, type Settings, type Visibility, type VoteStyle, actsIn, isMafiaRole } from "../shared/game";
 import { DAY_SECONDS, DEFENSE_SECONDS, DETECTIVE_COUNTS, FINAL_VOTE_SCOPES, LANGS, MAFIA_COUNTS, MODE_IDS, VISIBILITY_IDS, VOTE_SECONDS, VOTE_STYLE_IDS } from "../shared/options";
 import { winOdds } from "../shared/odds";
+import { VoteCard, VoteLogList, VoteLogModal } from "./VoteLog";
 import type { ClientView, RoomSummary } from "../shared/room";
 import { call, callRooms, loadSession, playerToken, saveName, saveSession, savedName, useRoom, type Session } from "./api";
 import { keepAwake, plain, useNarrator } from "./narrator";
@@ -40,6 +41,7 @@ export function App() {
   const [rules, setRules] = useState(false);
   const [feedback, setFeedback] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [voteLogOpen, setVoteLogOpen] = useState(false);
   const [admin, setAdmin] = useState(() => location.hash === "#admin");
   useEffect(() => {
     const h = () => setAdmin(location.hash === "#admin");
@@ -98,8 +100,9 @@ export function App() {
 
   const v = room.view;
   const watch = session.mode === "watch";
+  const moderator = session.mode === "moderator";
   return (
-    <Shell code={v.code} onRules={() => setRules(true)} onFeedback={() => setFeedback(true)} right={<NarratorControl n={narrator} />}>
+    <Shell code={v.code} onRules={() => setRules(true)} onFeedback={() => setFeedback(true)} right={<>{!watch && v.vote.log.length > 0 && <button className="chip" onClick={() => setVoteLogOpen(true)}>Votes</button>}<NarratorControl n={narrator} /></>}>
       {room.offline && (
         <div className="offline" role="status">
           <span>Reconnecting… your game is safe and you will rejoin automatically.</span>
@@ -108,12 +111,15 @@ export function App() {
       )}
       {room.error && <p className="error" role="alert">{room.error}</p>}
       {resumed && <WelcomeBack code={v.code} onDismiss={() => setResumed(false)} onLeave={leave} />}
-      {watch ? (
-        <Display v={v} now={room.now} narratorOn={narrator.on} enable={narrator.enable} />
+      {moderator && v.phase === "lobby" ? (
+        <Lobby v={v} act={room.act} onLeave={leave} />
+      ) : watch || moderator ? (
+        <Display v={v} now={room.now} narratorOn={narrator.on} enable={narrator.enable} control={moderator ? { act: room.act, onLeave: leave } : undefined} />
       ) : (
         <PlayerScreen v={v} act={room.act} now={room.now} onLeave={leave} onFeedback={() => setFeedback(true)} />
       )}
       {rules && <RulesModal onClose={() => setRules(false)} />}
+      {voteLogOpen && <VoteLogModal v={v} onClose={() => setVoteLogOpen(false)} />}
       {feedback && <FeedbackModal onClose={() => setFeedback(false)} context={fbContext} />}
     </Shell>
   );
@@ -165,6 +171,11 @@ function Home({ onEnter, onRules, onHistory, invite }: { onEnter: (s: Session) =
     await fn();
     setBusy(false);
   };
+  const createModerated = () =>
+    run(async () => {
+      const r = await call({ action: "create", token: playerToken(), name: "", moderator: true });
+      r.ok ? onEnter({ code: r.code, mode: "moderator" }) : setErr(r.error);
+    });
   const create = () =>
     run(async () => {
       saveName(name);
@@ -251,6 +262,7 @@ function Home({ onEnter, onRules, onHistory, invite }: { onEnter: (s: Session) =
         <input id="name" value={name} maxLength={16} autoComplete="nickname" onChange={(e) => setName(e.target.value)} placeholder="e.g. Meena" />
       </label>
       <button className="btn" disabled={busy || !name.trim()} onClick={create}>Create a game</button>
+      <button className="btn ghost" disabled={busy} onClick={createModerated}>Host on this TV or laptop (not playing)</button>
       <div className="divider"><span>or join one</span></div>
       <section className="stack" aria-label="Open rooms">
         <h3>Open rooms</h3>
@@ -412,7 +424,7 @@ function TalkBox({ v, act }: { v: ClientView; act: Act }) {
 }
 
 function HostSkip({ v, act, label }: { v: ClientView; act: Act; label: string }) {
-  return v.you?.isHost ? <button className="btn ghost" onClick={() => act({ action: "skip", at: v.skipToken })}>{label}</button> : null;
+  return v.you?.isHost || v.isModerator ? <button className="btn ghost" onClick={() => act({ action: "skip", at: v.skipToken })}>{label}</button> : null;
 }
 
 // ---------- Player screens ----------
@@ -628,24 +640,11 @@ function PlayerScreenBody({ v, act, now, onLeave, onFeedback }: { v: ClientView;
   }
 }
 
-/** How everyone voted in the vote that just closed. */
+/** How everyone voted in the vote that just closed, and what it decided. */
 function VoteReveal({ v }: { v: ClientView }) {
-  const r = v.vote.reveal;
-  if (!r || !Object.keys(r.votes).length) return null;
-  const nm = (id: string) => v.players.find((p) => p.id === id)?.name ?? "?";
-  const byTarget = new Map<string, string[]>();
-  for (const [from, to] of Object.entries(r.votes)) byTarget.set(to, [...(byTarget.get(to) ?? []), nm(from)]);
-  const rows = [...byTarget].sort((a, b) => (a[0] === "skip" ? 1 : b[0] === "skip" ? -1 : b[1].length - a[1].length));
-  return (
-    <div className="stack left votereveal">
-      <h3>{r.stage === "final" ? "How everyone voted" : "How the first vote went"}</h3>
-      <ul className="talklist">
-        {rows.map(([to, from]) => (
-          <li key={to}><b>{to === "skip" ? "Skipped" : nm(to)}</b> ({from.length}): {from.join(", ")}</li>
-        ))}
-      </ul>
-    </div>
-  );
+  const e = v.vote.reveal ? v.vote.log.at(-1) : undefined;
+  if (!e) return null;
+  return <div className="stack left votereveal"><h3>How everyone voted</h3><VoteCard v={v} e={e} /></div>;
 }
 
 /** Rough pre-game odds from the role mix alone (a few thousand simplified games). Updates as settings change. */
@@ -704,7 +703,7 @@ const VISIBILITY_TEXT: Record<Visibility, { title: string; text: string }> = {
 };
 
 function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => void }) {
-  const host = !!v.you?.isHost;
+  const host = !!v.you?.isHost || v.isModerator;
   const s = v.settings;
   const set = (patch: Partial<Settings>) => act({ action: "settings", patch });
   const [roomName, setRoomName] = useState(s.roomName);
@@ -728,11 +727,11 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
       <section className="stack invite" aria-label="Invite people">
         <QrCode url={inviteUrl(location.origin, v.code)} />
         <ShareBar url={inviteUrl(location.origin, v.code)} title={v.settings.roomName || "Mafia God Mode"} />
-        <details className="tvlink">
+        {!v.isModerator && <details className="tvlink">
           <summary>Show the game on a TV</summary>
           <p className="muted small">Open this link on the TV or laptop. It shows the narration, timer and who is alive.</p>
           <input className="linkfield" readOnly value={tvUrl(location.origin, v.code)} onFocus={(e) => e.currentTarget.select()} aria-label="TV link" />
-        </details>
+        </details>}
       </section>
       <section className="stack">
         <h3>Players ({n})</h3>
@@ -756,7 +755,7 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
           onRemove={host ? (id) => act({ action: v.players.find((p) => p.id === id)?.bot ? "removeBot" : "kick", target: id }) : undefined}
           hostId={v.hostId}
           you={v.you?.id}
-          onHost={host ? (id) => act({ action: "makeHost", target: id }) : undefined}
+          onHost={host && !v.isModerator ? (id) => act({ action: "makeHost", target: id }) : undefined}
         />
         {host && (
           <div className="row2">
@@ -869,7 +868,7 @@ function Lobby({ v, act, onLeave }: { v: ClientView; act: Act; onLeave: () => vo
 }
 
 // ---------- Table / TV screen ----------
-function Display({ v, now, narratorOn, enable }: { v: ClientView; now: () => number; narratorOn: boolean; enable: () => void }) {
+function Display({ v, now, narratorOn, enable, control }: { v: ClientView; now: () => number; narratorOn: boolean; enable: () => void; control?: { act: Act; onLeave: () => void } }) {
   const line = plain(v.lines.at(-1)?.text ?? "Waiting for players…");
   const label: Record<string, string> = { lobby: "Lobby", reveal: "Roles", night: "Night", dawn: "Dawn", day: "Day", vote: "Vote", defense: "Defense", result: "Result", over: "Game over" };
   const timed = ["day", "vote", "defense"].includes(v.phase);
@@ -890,9 +889,20 @@ function Display({ v, now, narratorOn, enable }: { v: ClientView; now: () => num
             {v.talk.slice(-4).map((t) => <li key={t.seq}><b>{t.name}</b> {t.text}</li>)}
           </ul>
         )}
+        {["defense", "result"].includes(v.phase) && v.vote.reveal && v.vote.log.at(-1) && <div className="tv-votes"><VoteCard v={v} e={v.vote.log.at(-1)!} /></div>}
         {v.phase === "over" && <p className="tv-say win">{v.winner === "town" ? "Town wins" : v.winner === "jester" ? "Jester wins" : "Mafia wins"}</p>}
         {!narratorOn && <button className="btn" onClick={enable}>Turn on the narrator and music</button>}
+        {control && (
+          <div className="modbar" aria-label="Moderator controls">
+            {v.phase !== "over" && v.due !== null && <HostSkip v={v} act={control.act} label="Skip ahead" />}
+            {v.phase === "over" && <button className="btn" onClick={() => control.act({ action: "rematch" })}>Play again</button>}
+            <button className="btn ghost" onClick={control.onLeave}>Leave</button>
+          </div>
+        )}
       </div>
+      {v.vote.log.length > 0 && (
+        <aside className="tv-votelog" aria-label="Vote log"><h3>Vote log</h3><VoteLogList v={v} /></aside>
+      )}
       <div className="seats">
         {v.players.map((p) => (
           <div key={p.id} className={`seat ${!p.alive ? "dead" : ""}`}>

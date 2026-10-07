@@ -83,3 +83,7 @@ The chat box is rendered in `PlayerScreen` as a sibling after the phase body (`P
 - Bomber role (`useBomber`, ~8+ players): Mafia-side, knows the Mafia, unknown to them, reads innocent to the Detective. Wakes first at night; may detonate once (kills itself plus one non-Mafia target before the Doctor/Detective act) or wait. Counts toward Mafia parity; town wins when no Mafia remain.
 - Feedback fixes: two Detectives, final-vote scope, vote reveal, speech-paced night, narrator queue, "Welcome back" bar with two-tap Leave game.
 - User decisions: FEEDBACK_ADMIN_KEY is set; recorded-voice API key not needed.
+
+## Moderator screen and vote log
+- "Host on this TV or laptop (not playing)" on the home screen creates a room whose `moderatorId` is the screen's token. Nobody is a player or host; the screen can change settings, add bots, admit people, start, skip ahead and replay. Players never see Start. The host role never moves to a player (`refreshHost` returns early).
+- Every closed vote is listed in `view.vote.log` (round, stage, who voted for whom, outcome). Phones get a "Votes" chip that opens it; the TV shows it as a side panel. It is cleared on rematch (it is derived from `history`).

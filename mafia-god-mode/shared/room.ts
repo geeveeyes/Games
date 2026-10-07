@@ -200,6 +200,7 @@ export function tick(room: RoomData, now: number, t: Timing = DEFAULT_TIMING, rn
 
 /** If the host has been away for a while and someone else is here, pass the host role on so the game keeps moving. */
 export function refreshHost(room: RoomData, g: Game, now: number): boolean {
+  if (g.moderatorId) return false; // a moderator screen keeps the host role; it never moves to a player
   if (g.phase === "lobby" && g.players.filter((p) => !p.bot).length < 2) return false;
   const seenAgo = (id: string) => now - (room.seen[id] ?? 0);
   const host = g.player(g.hostId);
@@ -213,7 +214,7 @@ export function refreshHost(room: RoomData, g: Game, now: number): boolean {
 
 // ---------- API ----------
 export type Action =
-  | { action: "create"; token: string; name: string }
+  | { action: "create"; token: string; name: string; moderator?: boolean }
   | { action: "join"; code: string; token: string; name: string }
   | { action: "watch"; code: string }
   | { action: "poll"; code: string; token?: string }
@@ -279,7 +280,7 @@ export function applyAction(room: RoomData, a: Action, now: number, t: Timing, r
         } else {
           r = { ok: false, error: "The game has already started." };
         }
-      } else if (g.settings.visibility === "ask" && g.players.length > 0 && !mine) {
+      } else if (g.settings.visibility === "ask" && (g.players.length > 0 || !!g.moderatorId) && !mine) {
         // In an "ask to join" room, everyone after the host has to be let in.
         r = g.requestJoin(a.token, a.name);
       } else {
@@ -349,7 +350,7 @@ export function applyAction(room: RoomData, a: Action, now: number, t: Timing, r
 }
 
 function hostOnly(g: Game, id: string): Result | null {
-  return g.hostId === id ? null : { ok: false, error: "Only the host can do that." };
+  return (g.hostId === id && !!id) || (!!g.moderatorId && g.moderatorId === id) ? null : { ok: false, error: "Only the host can do that." };
 }
 /** Fast-forward the current wait. A stale or double tap names an old phase and does nothing. */
 function skipPhase(room: RoomData, g: Game, at: string): Result {
@@ -376,13 +377,13 @@ export interface RoomSummary {
 
 /** Rooms that belong in the directory: lobby phase and not private. */
 export function isListed(g: Game): boolean {
-  return g.phase === "lobby" && g.settings.visibility !== "private" && g.players.some((p) => !p.bot);
+  return g.phase === "lobby" && g.settings.visibility !== "private" && (g.players.some((p) => !p.bot) || !!g.moderatorId);
 }
 
 export function summarize(room: RoomData): RoomSummary | null {
   const g = load(room);
   if (!isListed(g)) return null;
-  const host = g.player(g.hostId)?.name ?? "Host";
+  const host = g.moderatorId ? "Moderator" : (g.player(g.hostId)?.name ?? "Host");
   return {
     code: room.code,
     name: g.settings.roomName || `${host}'s game`,

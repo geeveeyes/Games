@@ -15,6 +15,7 @@
     "e2e:reliability": "node e2e/reliability.mjs",
     "e2e:invite": "node e2e/invite.mjs",
     "e2e:clips": "node e2e/clips.mjs",
+    "e2e:moderator": "node e2e/moderator.mjs",
     "e2e:roles": "node e2e/roles.mjs",
     "e2e:history": "node e2e/history.mjs",
     "e2e:typingphase": "node e2e/typing-phase.mjs",

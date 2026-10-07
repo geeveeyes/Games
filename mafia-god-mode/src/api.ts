@@ -25,7 +25,7 @@ export function playerToken(): string {
   return t;
 }
 
-export type Session = { code: string; mode: "player" | "watch" };
+export type Session = { code: string; mode: "player" | "watch" | "moderator" };
 export const loadSession = (): Session | null => {
   try {
     return JSON.parse(get("mgm.session") ?? "null");

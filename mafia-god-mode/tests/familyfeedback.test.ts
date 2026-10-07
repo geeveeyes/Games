@@ -130,3 +130,27 @@ describe("seeing how everyone voted", () => {
     expect(g.viewFor("p1").vote.reveal).toBeNull();
   });
 });
+
+describe("vote log", () => {
+  it("records every closed vote with its outcome and shows it to everyone", () => {
+    const g = new Game(() => 0.5);
+    for (let i = 0; i < 6; i++) g.addPlayer(i === 0 ? "h" : `p${i}`, `P${i}`);
+    g.updateSettings({ voteStyle: "trial" });
+    g.start();
+    g.players.forEach((p) => g.ackRole(p.id));
+    g.beginNight();
+    while (g.step) g.advanceNight(true);
+    g.startDay();
+    g.startVote();
+    const alive = g.alive();
+    alive.forEach((p) => g.castVote(p.id, alive.find((x) => x.id !== p.id && x.id === alive[0].id)?.id ?? alive[1].id));
+    g.resolveVote();
+    const log = g.viewFor("h").vote.log;
+    expect(log).toHaveLength(1);
+    expect(log[0]).toMatchObject({ stage: "poll", round: 1 });
+    expect(["accused", "none"]).toContain(log[0].outcome.kind);
+    expect(Object.keys(log[0].votes).length).toBeGreaterThan(0);
+    // everyone, including the shared screen, sees the same log
+    expect(g.viewFor(null).vote.log).toEqual(log);
+  });
+});

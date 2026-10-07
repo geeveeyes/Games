@@ -154,6 +154,7 @@ export interface HistoryEvent {
   flag?: boolean; // investigated: is Mafia. vigilante-shot: the target died.
   stage?: VoteStage;
   votes?: Record<string, string>;
+  outcome?: { kind: "accused" | "eliminated" | "none"; ids: string[] }; // vote events: what the vote decided
 }
 
 export interface Award {
@@ -224,6 +225,7 @@ export class Game {
   settings: Settings = { ...DEFAULT_SETTINGS };
   players: Player[] = [];
   hostId: string | null = null;
+  moderatorId: string | null = null; // a screen that runs the room without being a player (TV or laptop)
   winner: Winner | null = null;
   lines: Line[] = [];
   talk: Talk[] = [];
@@ -244,6 +246,7 @@ export class Game {
   bomberPick: string | null = null; // a player id, or "skip" for waiting
   bombed: string[] = []; // who died in tonight's bomb: [bomber, victim]
   lastNightDeathIds: string[] = [];
+  private currentVote: HistoryEvent | null = null; // the vote just closed, so its outcome can be filled in
   gameNo = 0;
   history: HistoryEvent[] = [];
   talkCounts: Record<string, number> = {};
@@ -326,7 +329,7 @@ export class Game {
     if (this.players.length >= MAX_PLAYERS) return fail("The room is full.");
     if (this.players.some((p) => p.name.toLowerCase() === clean.toLowerCase())) return fail("That name is taken.");
     this.players.push({ id, name: clean, role: null, alive: true, connected: true, seenRole: false });
-    this.hostId ??= id;
+    if (!this.moderatorId) this.hostId ??= id;
     return ok();
   }
 
@@ -335,7 +338,7 @@ export class Game {
     if (!this.player(id)) return ok();
     if (this.phase !== "lobby") return fail("Players can only leave from the lobby.");
     this.players = this.players.filter((p) => p.id !== id);
-    if (this.hostId === id) this.hostId = this.players.find((p) => p.connected && !p.bot)?.id ?? this.players.find((p) => !p.bot)?.id ?? null;
+    if (this.hostId === id && !this.moderatorId) this.hostId = this.players.find((p) => p.connected && !p.bot)?.id ?? this.players.find((p) => !p.bot)?.id ?? null;
     return ok();
   }
 
@@ -449,7 +452,7 @@ export class Game {
   setConnected(id: string, connected: boolean) {
     const p = this.player(id);
     if (p) p.connected = connected;
-    if (!connected && this.hostId === id) {
+    if (!connected && this.hostId === id && !this.moderatorId) {
       const next = this.players.find((q) => q.connected && !q.bot && q.id !== id);
       if (next) this.hostId = next.id;
     }
@@ -757,7 +760,9 @@ export class Game {
   /** Close the current vote. In trial style the first vote picks defendants; the final vote eliminates. */
   resolveVote() {
     if (this.phase !== "vote") return;
-    this.log({ round: this.round, kind: "vote", stage: this.voteStage, votes: { ...this.votes } });
+    const ev: HistoryEvent = { round: this.round, kind: "vote", stage: this.voteStage, votes: { ...this.votes }, outcome: { kind: "none", ids: [] } };
+    this.log(ev);
+    this.currentVote = ev;
     this.lastVoteReveal = { stage: this.voteStage, votes: { ...this.votes } };
     if (this.voteStage === "poll") return this.resolvePoll();
     const counts = this.tally();
@@ -775,6 +780,7 @@ export class Game {
       text = this.t("elim", { name: eliminated.name, votes: this.t(top === 1 ? "votes.one" : "votes.many", { n: top }) }) + role;
     }
     this.lastResult = { text, eliminatedId: eliminated?.id ?? null };
+    if (this.currentVote) this.currentVote.outcome = eliminated ? { kind: "eliminated", ids: [eliminated.id] } : { kind: "none", ids: [] };
     this.log(eliminated ? { round: this.round, kind: "eliminated", ids: [eliminated.id] } : { round: this.round, kind: "no-elimination" });
     this.phase = "result";
     this.narrate(text, eliminated ? "elim" : "noelim");
@@ -807,6 +813,7 @@ export class Game {
     }
     this.defendants = chosen;
     this.defenseIdx = 0;
+    if (this.currentVote) this.currentVote.outcome = { kind: "accused", ids: [...chosen] };
     this.log({ round: this.round, kind: "accused", ids: [...chosen] });
     this.phase = "defense";
     const names = chosen.map((id) => this.player(id)!.name);
@@ -959,7 +966,8 @@ export class Game {
       lines: this.lines.slice(-12),
       talk: this.talk.filter((t) => !t.ghost || (me && !me.alive) || this.phase === "over").slice(-14),
       joinStatus: me ? null : playerId ? (this.blocked.includes(playerId) ? "blocked" : this.pending.some((p) => p.id === playerId) ? "pending" : this.declined.includes(playerId) ? "declined" : null) : null,
-      pending: playerId && playerId === this.hostId ? this.pending : [],
+      isModerator: !!playerId && playerId === this.moderatorId,
+      pending: playerId && (playerId === this.hostId || playerId === this.moderatorId) ? this.pending : [],
       players: this.players.map((p) => ({
         id: p.id,
         name: p.name,
@@ -999,6 +1007,7 @@ export class Game {
         voted: this.phase === "vote" ? Object.keys(this.votes).length : 0,
         byWho: me && !me.alive && this.phase === "vote" ? this.votes : {},
         reveal: this.lastVoteReveal,
+        log: this.history.filter((e) => e.kind === "vote").map((e) => ({ round: e.round, stage: e.stage!, votes: e.votes ?? {}, outcome: e.outcome ?? { kind: "none" as const, ids: [] } })),
         eligible: this.alive().length,
       },
       result: this.lastResult,

@@ -50,18 +50,21 @@ export async function handle(
   if (!a || typeof a !== "object" || typeof a.action !== "string") return err("Bad request.");
 
   if (a.action === "create") {
-    if (!a.token || !a.name) return err("Enter your name.");
+    if (!a.token || (!a.name && !a.moderator)) return err("Enter your name.");
     for (let i = 0; i < 20; i++) {
       const code = randomCode(rng);
       const release = await store.lock(code);
       try {
         if (await store.get(code)) continue;
         const room = newRoom(code, now);
-        const r = applyAction(room, { action: "join", code, token: a.token, name: a.name }, now, timing, rng);
-        if (!r.ok) return err(r.error);
-        room.seen[a.token] = now;
+        if (!a.moderator) {
+          const r = applyAction(room, { action: "join", code, token: a.token, name: a.name }, now, timing, rng);
+          if (!r.ok) return err(r.error);
+        }
         const g0 = load(room);
-        g0.updateSettings({ roomName: `${g0.players[0].name}'s game` });
+        if (a.moderator) g0.moderatorId = a.token; // the screen runs the room; nobody is a player yet
+        g0.updateSettings({ roomName: a.moderator ? "Mafia game" : `${g0.players[0].name}'s game` });
+        room.seen[a.token] = now;
         room.game = g0.toJSON();
         await store.set(code, room);
         return { ok: true, code, view: buildView(room, a.token, now) };

@@ -339,6 +339,8 @@ var Game = class _Game {
   settings = { ...DEFAULT_SETTINGS };
   players = [];
   hostId = null;
+  moderatorId = null;
+  // a screen that runs the room without being a player (TV or laptop)
   winner = null;
   lines = [];
   talk = [];
@@ -362,6 +364,8 @@ var Game = class _Game {
   bombed = [];
   // who died in tonight's bomb: [bomber, victim]
   lastNightDeathIds = [];
+  currentVote = null;
+  // the vote just closed, so its outcome can be filled in
   gameNo = 0;
   history = [];
   talkCounts = {};
@@ -440,7 +444,7 @@ var Game = class _Game {
     if (this.players.length >= MAX_PLAYERS) return fail("The room is full.");
     if (this.players.some((p) => p.name.toLowerCase() === clean.toLowerCase())) return fail("That name is taken.");
     this.players.push({ id, name: clean, role: null, alive: true, connected: true, seenRole: false });
-    this.hostId ??= id;
+    if (!this.moderatorId) this.hostId ??= id;
     return ok();
   }
   removePlayer(id) {
@@ -448,7 +452,7 @@ var Game = class _Game {
     if (!this.player(id)) return ok();
     if (this.phase !== "lobby") return fail("Players can only leave from the lobby.");
     this.players = this.players.filter((p) => p.id !== id);
-    if (this.hostId === id) this.hostId = this.players.find((p) => p.connected && !p.bot)?.id ?? this.players.find((p) => !p.bot)?.id ?? null;
+    if (this.hostId === id && !this.moderatorId) this.hostId = this.players.find((p) => p.connected && !p.bot)?.id ?? this.players.find((p) => !p.bot)?.id ?? null;
     return ok();
   }
   /** Ask to join (rooms set to "Ask to join"). The host answers with admit or decline. */
@@ -559,7 +563,7 @@ var Game = class _Game {
   setConnected(id, connected) {
     const p = this.player(id);
     if (p) p.connected = connected;
-    if (!connected && this.hostId === id) {
+    if (!connected && this.hostId === id && !this.moderatorId) {
       const next = this.players.find((q) => q.connected && !q.bot && q.id !== id);
       if (next) this.hostId = next.id;
     }
@@ -842,7 +846,9 @@ var Game = class _Game {
   /** Close the current vote. In trial style the first vote picks defendants; the final vote eliminates. */
   resolveVote() {
     if (this.phase !== "vote") return;
-    this.log({ round: this.round, kind: "vote", stage: this.voteStage, votes: { ...this.votes } });
+    const ev = { round: this.round, kind: "vote", stage: this.voteStage, votes: { ...this.votes }, outcome: { kind: "none", ids: [] } };
+    this.log(ev);
+    this.currentVote = ev;
     this.lastVoteReveal = { stage: this.voteStage, votes: { ...this.votes } };
     if (this.voteStage === "poll") return this.resolvePoll();
     const counts = this.tally();
@@ -860,6 +866,7 @@ var Game = class _Game {
       text = this.t("elim", { name: eliminated.name, votes: this.t(top === 1 ? "votes.one" : "votes.many", { n: top }) }) + role;
     }
     this.lastResult = { text, eliminatedId: eliminated?.id ?? null };
+    if (this.currentVote) this.currentVote.outcome = eliminated ? { kind: "eliminated", ids: [eliminated.id] } : { kind: "none", ids: [] };
     this.log(eliminated ? { round: this.round, kind: "eliminated", ids: [eliminated.id] } : { round: this.round, kind: "no-elimination" });
     this.phase = "result";
     this.narrate(text, eliminated ? "elim" : "noelim");
@@ -890,6 +897,7 @@ var Game = class _Game {
     }
     this.defendants = chosen;
     this.defenseIdx = 0;
+    if (this.currentVote) this.currentVote.outcome = { kind: "accused", ids: [...chosen] };
     this.log({ round: this.round, kind: "accused", ids: [...chosen] });
     this.phase = "defense";
     const names = chosen.map((id) => this.player(id).name);
@@ -1029,7 +1037,8 @@ var Game = class _Game {
       lines: this.lines.slice(-12),
       talk: this.talk.filter((t) => !t.ghost || me && !me.alive || this.phase === "over").slice(-14),
       joinStatus: me ? null : playerId ? this.blocked.includes(playerId) ? "blocked" : this.pending.some((p) => p.id === playerId) ? "pending" : this.declined.includes(playerId) ? "declined" : null : null,
-      pending: playerId && playerId === this.hostId ? this.pending : [],
+      isModerator: !!playerId && playerId === this.moderatorId,
+      pending: playerId && (playerId === this.hostId || playerId === this.moderatorId) ? this.pending : [],
       players: this.players.map((p) => ({
         id: p.id,
         name: p.name,
@@ -1061,6 +1070,7 @@ var Game = class _Game {
         voted: this.phase === "vote" ? Object.keys(this.votes).length : 0,
         byWho: me && !me.alive && this.phase === "vote" ? this.votes : {},
         reveal: this.lastVoteReveal,
+        log: this.history.filter((e) => e.kind === "vote").map((e) => ({ round: e.round, stage: e.stage, votes: e.votes ?? {}, outcome: e.outcome ?? { kind: "none", ids: [] } })),
         eligible: this.alive().length
       },
       result: this.lastResult,
@@ -1408,6 +1418,7 @@ function tick(room, now, t = DEFAULT_TIMING, rng = Math.random) {
   return changed;
 }
 function refreshHost(room, g, now) {
+  if (g.moderatorId) return false;
   if (g.phase === "lobby" && g.players.filter((p) => !p.bot).length < 2) return false;
   const seenAgo = (id) => now - (room.seen[id] ?? 0);
   const host = g.player(g.hostId);
@@ -1449,7 +1460,7 @@ function applyAction(room, a, now, t, rng = Math.random) {
         } else {
           r = { ok: false, error: "The game has already started." };
         }
-      } else if (g.settings.visibility === "ask" && g.players.length > 0 && !mine) {
+      } else if (g.settings.visibility === "ask" && (g.players.length > 0 || !!g.moderatorId) && !mine) {
         r = g.requestJoin(a.token, a.name);
       } else {
         r = g.addPlayer(a.token, a.name);
@@ -1517,7 +1528,7 @@ function applyAction(room, a, now, t, rng = Math.random) {
   return r;
 }
 function hostOnly(g, id) {
-  return g.hostId === id ? null : { ok: false, error: "Only the host can do that." };
+  return g.hostId === id && !!id || !!g.moderatorId && g.moderatorId === id ? null : { ok: false, error: "Only the host can do that." };
 }
 function skipPhase(room, g, at) {
   if (g.skipToken() === at && room.due !== null) room.due = 0;
@@ -1529,12 +1540,12 @@ function heartbeat(room, id, now) {
   return true;
 }
 function isListed(g) {
-  return g.phase === "lobby" && g.settings.visibility !== "private" && g.players.some((p) => !p.bot);
+  return g.phase === "lobby" && g.settings.visibility !== "private" && (g.players.some((p) => !p.bot) || !!g.moderatorId);
 }
 function summarize(room) {
   const g = load(room);
   if (!isListed(g)) return null;
-  const host = g.player(g.hostId)?.name ?? "Host";
+  const host = g.moderatorId ? "Moderator" : g.player(g.hostId)?.name ?? "Host";
   return {
     code: room.code,
     name: g.settings.roomName || `${host}'s game`,
@@ -1597,18 +1608,21 @@ async function handleRooms(store) {
 async function handle(a, store, now = Date.now(), timing = DEFAULT_TIMING, rng = Math.random) {
   if (!a || typeof a !== "object" || typeof a.action !== "string") return err("Bad request.");
   if (a.action === "create") {
-    if (!a.token || !a.name) return err("Enter your name.");
+    if (!a.token || !a.name && !a.moderator) return err("Enter your name.");
     for (let i = 0; i < 20; i++) {
       const code2 = randomCode(rng);
       const release2 = await store.lock(code2);
       try {
         if (await store.get(code2)) continue;
         const room = newRoom(code2, now);
-        const r = applyAction(room, { action: "join", code: code2, token: a.token, name: a.name }, now, timing, rng);
-        if (!r.ok) return err(r.error);
-        room.seen[a.token] = now;
+        if (!a.moderator) {
+          const r = applyAction(room, { action: "join", code: code2, token: a.token, name: a.name }, now, timing, rng);
+          if (!r.ok) return err(r.error);
+        }
         const g0 = load(room);
-        g0.updateSettings({ roomName: `${g0.players[0].name}'s game` });
+        if (a.moderator) g0.moderatorId = a.token;
+        g0.updateSettings({ roomName: a.moderator ? "Mafia game" : `${g0.players[0].name}'s game` });
+        room.seen[a.token] = now;
         room.game = g0.toJSON();
         await store.set(code2, room);
         return { ok: true, code: code2, view: buildView(room, a.token, now) };
